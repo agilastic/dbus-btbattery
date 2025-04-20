@@ -10,220 +10,301 @@ import atexit
 
 
 class Virtual(Battery):
-	def __init__(self, b1=None, b2=None, b3=None, b4=None, series_config=True, config_files=None):
-		Battery.__init__(self, 0, 0, 0)
+	def __init__(self, batteries=None, b1=None, b2=None, b3=None, b4=None, series_config=True, config_files=None):
+		Battery.__init__(self, "/virtual", 0, 0)  # Use meaningful port path
 
 		self.type = "Virtual"
-		self.port = "/" + self.type
 		self.series_config = series_config  # True for series, False for parallel
-		self.config_files = config_files or {}  # Dict mapping BT address to config file
+		self.online = True # Assume online initially
 
+		# Initialize battery list - either from batteries list or individual parameters
 		self.batts = []
-		if b1:
-			self.batts.append(b1)
-		if b2:
-			self.batts.append(b2)
-		if b3:
-			self.batts.append(b3)
-		if b4:
-			self.batts.append(b4)
+		if batteries and isinstance(batteries, list):
+			self.batts = batteries
+		else:
+			# For backward compatibility
+			if b1: self.batts.append(b1)
+			if b2: self.batts.append(b2)
+			if b3: self.batts.append(b3)
+			if b4: self.batts.append(b4)
 			
-		# Load battery-specific configurations if in parallel mode
-		if not series_config and self.config_files:
-			for bat in self.batts:
-				if hasattr(bat, 'address') and bat.address in self.config_files:
-					logger.info(f"Loading custom config for battery {bat.address}: {self.config_files[bat.address]}")
-					bat.load_custom_config(self.config_files[bat.address])
+		# Initialize aggregated attributes
+		self._initialize_attributes()
+		
+		# Log battery info
+		logger.info(f"Virtual battery created with {len(self.batts)} components in {'series' if series_config else 'parallel'} mode.")
 		
 
+	def _initialize_attributes(self):
+		"""Sets initial/default values for aggregated attributes."""
+		self.voltage = 0.0
+		self.current = 0.0
+		self.capacity_remain = 0.0
+		self.capacity = 0.0
+		self.soc = None # Start with unknown SOC
+		self.cycles = 0
+		self.production = None
+		self.charge_fet = True # Assume FETs are initially on
+		self.discharge_fet = True
+		self.cell_count = 0
+		self.temp_sensors = 0
+		self.temp1 = None
+		self.temp2 = None
+		self.cells = [] # Empty cell list initially
+		self.max_battery_voltage = None
+		self.min_battery_voltage = None
+		self.max_battery_charge_current = MAX_BATTERY_CHARGE_CURRENT
+		self.max_battery_discharge_current = MAX_BATTERY_DISCHARGE_CURRENT
+		
 	def test_connection(self):
+		# Test connection by checking if at least one component battery tests positive
+		if not self.batts:
+			return False
+		for b in self.batts:
+			try:
+				if b.test_connection():
+					return True
+			except Exception as e:
+				logger.warning(f"Error testing connection for component battery {getattr(b, 'address', 'N/A')}: {e}")
 		return False
 
 
 	def get_settings(self):
-		self.voltage = 0
-		self.current = 0
-		self.cycles = 0
-		self.production = 0
-		self.soc = 0
-		self.cell_count = 0
-		self.capacity = 0
-		self.capacity_remain = 0
-		self.charge_fet	= True
-		self.discharge_fet = True
-		
-		# Check if we have any batteries to work with
-		bcnt = len(self.batts)
-		if bcnt == 0:
-			logger.error("No batteries in virtual battery configuration")
+		logger.info("Getting settings for virtual battery components...")
+		if not self.batts:
+			logger.error("Virtual battery has no components.")
+			self.online = False
 			return False
 
-		result = False
-		# Loop through all batteries
+		# Reset aggregated values
+		self._initialize_attributes()
+
+		any_success = False
+		# Get data from each component battery
 		for b in self.batts:
 			try:
-				result_b = b.get_settings()
-				result = result or result_b
-				
-				if not result_b:
-					logger.warning(f"Failed to get settings from battery {b.address}")
-					continue
-					
-				if self.series_config:
-					# SERIES CONFIGURATION
-					# Add battery voltages together
-					if b.voltage is not None:
-						self.voltage += b.voltage
-					
-					# Add cell counts
-					if b.cell_count is not None:
-						self.cell_count += b.cell_count
-
-					# Add current values, and div by cell count after the loop to get avg
-					if b.current is not None:
-						self.current += b.current
-					
-					# Use the lowest capacity value (conservative)
-					if b.capacity is not None and (b.capacity < self.capacity or self.capacity == 0):
-						self.capacity = b.capacity
-
-					# Use the lowest capacity_remain value (conservative)
-					if b.capacity_remain is not None and (b.capacity_remain < self.capacity_remain or self.capacity_remain == 0):
-						self.capacity_remain = b.capacity_remain
+				if b.get_settings():
+					any_success = True
+					# Mark battery as online if available
+					if hasattr(b, 'online'):
+						b.online = True
 				else:
-					# PARALLEL CONFIGURATION
-					# Use reference voltage from first battery (should be equal in parallel)
-					if b.voltage is not None:
-						if self.voltage == 0:
-							self.voltage = b.voltage
-						else:
-							# Minor voltage correction (average for displayed value)
-							self.voltage = (self.voltage + b.voltage) / 2
-					
-					# Use the cell count from the first battery (all parallel batteries have same cell count)
-					if b.cell_count is not None and self.cell_count == 0:
-						self.cell_count = b.cell_count
-					
-					# Add currents together
-					if b.current is not None:
-						self.current += b.current
-					
-					# Add capacities together
-					if b.capacity is not None:
-						self.capacity += b.capacity
-					
-					# Add capacity_remain together
-					if b.capacity_remain is not None:
-						self.capacity_remain += b.capacity_remain
-
-				# Use the highest cycle count (for both configurations)
-				if b.cycles is not None and b.cycles > self.cycles:
-					self.cycles = b.cycles
-				
-				# Use the lowest SOC value (conservative for both configurations)
-				# For parallel, we could also use a capacity-weighted average, but using the 
-				# lowest value is safer to prevent over-discharge
-				if b.soc is not None and (b.soc < self.soc or self.soc == 0):
-					self.soc = b.soc
-
-				# For parallel batteries, one battery in protective mode shouldn't disable all
-				if self.series_config:
-					self.charge_fet &= b.charge_fet if b.charge_fet is not None else True
-					self.discharge_fet &= b.discharge_fet if b.discharge_fet is not None else True
-				else:
-					# For parallel, at least one battery should support charge/discharge
-					# Only set to False if all batteries are False (using |= to avoid reset to True)
-					if b.charge_fet is not None and b.charge_fet is False:
-						self.charge_fet &= False
-					if b.discharge_fet is not None and b.discharge_fet is False:
-						self.discharge_fet &= False
+					logger.warning(f"Failed to get settings from battery {getattr(b, 'address', 'N/A')}")
+					# Mark battery as offline if available
+					if hasattr(b, 'online'):
+						b.online = False
 			except Exception as e:
-				logger.error(f"Error processing battery {b.address if hasattr(b, 'address') else 'unknown'}: {str(e)}")
-				continue
+				logger.error(f"Error getting settings from battery {getattr(b, 'address', 'N/A')}: {e}")
+				# Mark battery as offline if available
+				if hasattr(b, 'online'):
+					b.online = False
 
-		# Only allocate cells if we have a valid cell count
-		if self.cell_count > 0:
-			self.cells = [None]*self.cell_count
-		else:
-			self.cells = []
+		if not any_success:
+			logger.error("Failed to get settings from any component battery.")
+			self.online = False
+			return False
 
-		# Get number of valid batteries
-		active_batteries = sum(1 for b in self.batts if hasattr(b, 'voltage') and b.voltage is not None)
+		# Perform data aggregation
+		self._aggregate_data()
 		
-		if active_batteries > 0:
-			if self.series_config and active_batteries > 0:
-				# Avg the current for series configuration (only if we have active batteries)
-				self.current /= active_batteries
-			
-			# Find the first battery with valid temperature data
-			temp_battery = next((b for b in self.batts if hasattr(b, 'temp_sensors') and b.temp_sensors is not None), None)
-			
-			if temp_battery is not None:
-				# Use the temp sensors from the first battery with valid data
-				self.temp_sensors = temp_battery.temp_sensors
-				self.temp1 = temp_battery.temp1
-				self.temp2 = temp_battery.temp2
-			else:
-				logger.warning("No battery with valid temperature data found")
-
-
-		self.max_battery_voltage = MAX_CELL_VOLTAGE * self.cell_count
-		self.min_battery_voltage = MIN_CELL_VOLTAGE * self.cell_count
-
-		self.max_battery_charge_current = MAX_BATTERY_CHARGE_CURRENT
-		self.max_battery_discharge_current = MAX_BATTERY_DISCHARGE_CURRENT
-		return result
+		return True
 
 
 	def refresh_data(self):
-		result = self.get_settings()
-
-		# Clear cells list
-		self.cells: List[Cell] = []
-		
-		# Check if we have any batteries
+		logger.debug("Refreshing data for virtual battery components...")
 		if not self.batts:
-			logger.error("No batteries in virtual battery configuration")
+			logger.error("Virtual battery has no components.")
+			self.online = False
 			return False
 
-		result2 = False
-		at_least_one_success = False
-		
-		# Loop through all batteries
+		# Reset aggregated values
+		self._initialize_attributes()
+
+		any_success = False
+		# Get data from each component battery
 		for b in self.batts:
 			try:
-				result_refresh = b.refresh_data()
-				if result_refresh:
-					at_least_one_success = True
-					
-					if self.series_config:
-						# In series, we append all cells together
-						if hasattr(b, 'cells') and b.cells:
-							self.cells += b.cells
-					else:
-						# In parallel configuration, we use cell data from first battery with valid data
-						# This works because in parallel, all cells should have same voltage
-						if len(self.cells) == 0 and hasattr(b, 'cells') and b.cells:
-							self.cells = b.cells.copy()
+				if b.refresh_data():
+					any_success = True
+					# Mark battery as online if available
+					if hasattr(b, 'online'):
+						b.online = True
 				else:
-					logger.warning(f"Failed to refresh data from battery {b.address if hasattr(b, 'address') else 'unknown'}")
+					logger.warning(f"Failed to refresh data from battery {getattr(b, 'address', 'N/A')}")
+					# Mark battery as offline if available
+					if hasattr(b, 'online'):
+						b.online = False
 			except Exception as e:
-				logger.error(f"Error refreshing battery {b.address if hasattr(b, 'address') else 'unknown'}: {str(e)}")
+				logger.error(f"Error refreshing data from battery {getattr(b, 'address', 'N/A')}: {e}")
+				# Mark battery as offline if available
+				if hasattr(b, 'online'):
+					b.online = False
+
+		if not any_success:
+			logger.warning("Failed to refresh data from any component battery.")
+			self.online = False
+			return False
+
+		# Perform data aggregation
+		self._aggregate_data()
+		
+		# Return True if we are considered online after aggregation
+		return self.online
+
+
+	def _aggregate_data(self):
+		"""
+		Aggregates data from component batteries into the virtual battery's attributes.
+		This should be called AFTER component batteries have been refreshed or had settings read.
+		"""
+		logger.debug(f"Aggregating data for virtual battery ({'series' if self.series_config else 'parallel'})...")
+
+		if not self.batts:
+			logger.warning("No batteries to aggregate data from.")
+			self.online = False
+			return
+
+		active_batteries = 0
+		total_current = 0.0
+		total_capacity = 0.0
+		total_capacity_remain = 0.0
+		min_soc = 101.0  # Start high to find minimum SOC
+		max_cycles = 0
+		first_valid_voltage = None
+		sum_voltages = 0.0 # For averaging parallel voltage display
+		all_cells = []
+		min_charge_fet = True # Assume True unless one is False
+		min_discharge_fet = True # Assume True unless one is False
+		temp_data_source = None # Find first battery with temp data
+
+		# Loop through all batteries and collect data
+		for b in self.batts:
+			# Skip offline batteries
+			if hasattr(b, 'online') and not b.online:
+				logger.debug(f"Skipping offline battery {getattr(b, 'address', 'N/A')}")
 				continue
-		
-		# For troubleshooting - log if no cell data was collected
-		if not self.cells:
-			logger.warning("No cell data collected from any battery")
-		
-		# Success if we got data from at least one battery
-		result = result and at_least_one_success
-		return result
+
+			valid_data_found = False
+			if b.voltage is not None:
+				valid_data_found = True
+				sum_voltages += b.voltage
+				if self.series_config:
+					self.voltage += b.voltage
+				elif first_valid_voltage is None:
+					first_valid_voltage = b.voltage # Use first as reference for parallel
+
+			if b.current is not None:
+				valid_data_found = True
+				total_current += b.current
+
+			if b.capacity is not None and b.capacity > 0:
+				valid_data_found = True
+				if self.series_config:
+					# Use lowest capacity for series (most conservative)
+					if self.capacity == 0.0 or b.capacity < self.capacity:
+						self.capacity = b.capacity
+				else: # Parallel
+					total_capacity += b.capacity
+
+			if b.capacity_remain is not None:
+				valid_data_found = True
+				if self.series_config:
+					# Use lowest remaining capacity for series (most conservative)
+					if self.capacity_remain == 0.0 or b.capacity_remain < self.capacity_remain:
+						self.capacity_remain = b.capacity_remain
+				else: # Parallel
+					total_capacity_remain += b.capacity_remain
+
+			if b.soc is not None:
+				valid_data_found = True
+				# Use lowest SOC for both modes (conservative)
+				if b.soc < min_soc:
+					min_soc = b.soc
+
+			if b.cycles is not None:
+				valid_data_found = True
+				# Use highest cycle count for both modes
+				if b.cycles > max_cycles:
+					max_cycles = b.cycles
+
+			if b.cell_count is not None and b.cell_count > 0:
+				valid_data_found = True
+				if self.series_config:
+					self.cell_count += b.cell_count
+				elif self.cell_count == 0: # Parallel: use first battery's count
+					self.cell_count = b.cell_count
+
+				# Cell aggregation
+				if hasattr(b, 'cells') and b.cells:
+					if self.series_config:
+						all_cells.extend(b.cells) # Append all cells for series
+					elif not all_cells: # Parallel: Take cells from first battery providing them
+						all_cells = b.cells[:] # Make a copy
+
+			# FET status aggregation
+			if b.charge_fet is False: min_charge_fet = False
+			if b.discharge_fet is False: min_discharge_fet = False
+
+			# Temperature data source
+			if temp_data_source is None and hasattr(b, 'temp_sensors') and b.temp_sensors:
+				temp_data_source = b # Use first battery with temp sensors
+
+			if valid_data_found:
+				active_batteries += 1
+
+		# --- Final calculations ---
+		if active_batteries == 0:
+			logger.warning("No active batteries found during aggregation.")
+			self.online = False
+			return
+
+		# Assign aggregated values
+		self.cycles = max_cycles
+		self.soc = min_soc if min_soc <= 100 else None
+		self.charge_fet = min_charge_fet
+		self.discharge_fet = min_discharge_fet
+		self.cells = all_cells
+
+		if self.series_config:
+			# Voltage is already summed
+			# Capacity is already minimized
+			# Capacity remain is already minimized
+			# Average current across active series batteries
+			self.current = total_current / active_batteries if active_batteries > 0 else 0.0
+		else: # Parallel
+			# Use average voltage for display (more accurate than first)
+			self.voltage = sum_voltages / active_batteries if active_batteries > 0 else 0.0
+			if first_valid_voltage is not None and self.voltage == 0.0:
+				self.voltage = first_valid_voltage # Fallback to first valid voltage
+			self.current = total_current # Sum currents
+			self.capacity = total_capacity # Sum capacities
+			self.capacity_remain = total_capacity_remain # Sum remaining
+
+		# Assign temperature data
+		if temp_data_source:
+			self.temp_sensors = getattr(temp_data_source, 'temp_sensors', 0)
+			self.temp1 = getattr(temp_data_source, 'temp1', None)
+			self.temp2 = getattr(temp_data_source, 'temp2', None)
+		else:
+			logger.debug("No temperature data found from component batteries.")
+
+		# Calculate overall min/max voltage limits based on aggregated cell count
+		if self.cell_count > 0:
+			self.max_battery_voltage = MAX_CELL_VOLTAGE * self.cell_count
+			self.min_battery_voltage = MIN_CELL_VOLTAGE * self.cell_count
+		else:
+			logger.warning("Virtual battery cell count is zero after aggregation.")
+
+		self.online = True # Mark as online after successful aggregation
+		logger.debug(f"Aggregation complete. Voltage={self.voltage:.2f}V, Current={self.current:.2f}A, SOC={self.soc}%, Cells={self.cell_count}")
 
 
 	def log_settings(self):
-		# Override log_settings() to call get_settings() first
-		self.get_settings()
-		logger.info(f"Virtual battery in {'series' if self.series_config else 'parallel'} configuration")
+		# Settings should be aggregated before logging
+		logger.info(f"--- Virtual Battery ({'Series' if self.series_config else 'Parallel'}) ---")
+		logger.info(f"> Component Batteries: {len(self.batts)}")
+		
+		# Call the base class method to log common settings
 		Battery.log_settings(self)
 
 
