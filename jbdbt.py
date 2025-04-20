@@ -288,6 +288,9 @@ class JbdBt(Battery):
 	def __init__(self, address, config_path=None):
 		Battery.__init__(self, 0, 0, address)
 
+		# Explicitly set address because parent class might not be setting it correctly
+		self.address = address
+
 		self.protection = JbdProtection()
 		self.type = "JBD BT"
 		self.online = True # Assume online initially
@@ -307,7 +310,6 @@ class JbdBt(Battery):
 		self.cellData = None
 		self.cellDataTS = time.monotonic()
 
-		# address is already set by parent class, don't override it
 		self.port = "/bt" + self.address.replace(":", "")
 		self.interval = 5
 

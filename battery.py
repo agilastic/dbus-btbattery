@@ -54,6 +54,7 @@ class Battery(ABC):
     def __init__(self, port, baud, address):
         self.port = port
         self.baud_rate = baud
+        self.address = address  # Added explicit address assignment
         self.role = "battery"
         self.type = "Generic"
         self.poll_interval = 1000
