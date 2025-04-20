@@ -307,10 +307,9 @@ class JbdBt(Battery):
 		self.cellData = None
 		self.cellDataTS = time.monotonic()
 
-		self.address = address
-		self.port = "/bt" + address.replace(":", "")
+		# address is already set by parent class, don't override it
+		self.port = "/bt" + self.address.replace(":", "")
 		self.interval = 5
-		self.custom_config = None
 
 		self.dev = JbdBtDev(self.address, self) # Pass self for watchdog offline signaling
 		self.dev.addCellDataCallback(self.cellDataCB)
