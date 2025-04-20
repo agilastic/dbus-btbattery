@@ -11,7 +11,7 @@ import atexit
 import os
 
 # 0 disabled, or set the number of seconds to detect BT hang, and reboot.
-BT_WATCHDOG_TIMER=300
+BT_WATCHDOG_TIMER=30
 
 
 class JbdProtection(Protection):
@@ -96,7 +96,7 @@ class JbdBtDev(DefaultDelegate, Thread):
 					continue
 
 			try:
-				if self.bt.waitForNotifications(2):
+				if self.bt.waitForNotifications(3):
 					continue
 
 				if (time.monotonic() - timer) > self.interval:
@@ -195,11 +195,17 @@ class JbdBt(Battery):
 		self.address = address
 		self.port = "/bt" + address.replace(":", "")
 		self.interval = 5
+		self.custom_config = None
 
 		dev = JbdBtDev(self.address)
 		dev.addCellDataCallback(self.cellDataCB)
 		dev.addGeneralDataCallback(self.generalDataCB)
 		dev.connect()
+		
+	def load_custom_config(self, config_path):
+		"""Load a custom configuration file for this specific battery"""
+		from utils import load_config
+		self.custom_config = load_config(config_path)
 
 
 	def test_connection(self):
@@ -210,8 +216,14 @@ class JbdBt(Battery):
 		while not result:
 			result = self.read_gen_data()
 			time.sleep(1)
-		self.max_battery_charge_current = MAX_BATTERY_CHARGE_CURRENT
-		self.max_battery_discharge_current = MAX_BATTERY_DISCHARGE_CURRENT
+			
+		# Use custom config if available, otherwise use global config
+		if self.custom_config:
+			self.max_battery_charge_current = float(self.custom_config["DEFAULT"]["MAX_BATTERY_CHARGE_CURRENT"])
+			self.max_battery_discharge_current = float(self.custom_config["DEFAULT"]["MAX_BATTERY_DISCHARGE_CURRENT"])
+		else:
+			self.max_battery_charge_current = MAX_BATTERY_CHARGE_CURRENT
+			self.max_battery_discharge_current = MAX_BATTERY_DISCHARGE_CURRENT
 		return result
 
 	def refresh_data(self):

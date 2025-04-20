@@ -14,11 +14,22 @@ logging.basicConfig()
 logger = logging.getLogger("BluetoothBattery")
 logger.setLevel(logging.INFO)
 
-config = configparser.ConfigParser()
-path = Path(__file__).parents[0]
-default_config_file_path = path.joinpath("default_config.ini").absolute().__str__()
-custom_config_file_path = path.joinpath("config.ini").absolute().__str__()
-config.read([default_config_file_path, custom_config_file_path])
+def load_config(custom_config_path=None):
+    config = configparser.ConfigParser()
+    path = Path(__file__).parents[0]
+    default_config_file_path = path.joinpath("default_config.ini").absolute().__str__()
+    
+    # Load custom config if specified, otherwise use default config.ini
+    if custom_config_path:
+        custom_config_file_path = custom_config_path
+    else:
+        custom_config_file_path = path.joinpath("config.ini").absolute().__str__()
+    
+    config.read([default_config_file_path, custom_config_file_path])
+    return config
+
+# Load default config initially
+config = load_config()
 
 
 def _get_list_from_config(

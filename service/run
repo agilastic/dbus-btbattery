@@ -1,3 +1,15 @@
 #!/bin/sh
 exec 2>&1
+# Replace with your battery address(es) and configuration
+# For series configuration (default): 
+#   exec /opt/victronenergy/dbus-btbattery/dbus-btbattery.py AA:BB:CC:DD:EE:FF BB:CC:DD:EE:FF:GG
+# 
+# For parallel configuration: 
+#   exec /opt/victronenergy/dbus-btbattery/dbus-btbattery.py -p AA:BB:CC:DD:EE:FF BB:CC:DD:EE:FF:GG
+#
+# For parallel configuration with per-battery configs:
+#   exec /opt/victronenergy/dbus-btbattery/dbus-btbattery.py -p \
+#     AA:BB:CC:DD:EE:FF:/opt/victronenergy/dbus-btbattery/config1.ini \
+#     BB:CC:DD:EE:FF:GG:/opt/victronenergy/dbus-btbattery/config2.ini
+
 exec /opt/victronenergy/dbus-btbattery/dbus-btbattery.py 70:3e:97:08:00:62

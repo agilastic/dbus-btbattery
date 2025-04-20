@@ -50,18 +50,110 @@ def main():
 	)
 
 	btaddr = get_btaddr()
-	if len(btaddr) == 2:
-		battery: Battery = Virtual( JbdBt(btaddr[0]), JbdBt(btaddr[1]) )
-	elif len(btaddr) == 3:
-		battery: Battery = Virtual( JbdBt(btaddr[0]), JbdBt(btaddr[1]), JbdBt(btaddr[2]) )
-	elif len(btaddr) == 4:
-		battery: Battery = Virtual( JbdBt(btaddr[0]), JbdBt(btaddr[1]), JbdBt(btaddr[2]), JbdBt(btaddr[3]) )
-	else:
-		battery: Battery = JbdBt(btaddr[0])
+	
+	# Check if the first argument is a configuration option
+	series_config = True  # Default is series configuration
+	start_idx = 0
+	
+	if btaddr and btaddr[0].lower() in ['-p', '--parallel']:
+		# Parallel battery configuration
+		series_config = False
+		start_idx = 1
+		btaddr = btaddr[1:]  # Remove the configuration flag
+	elif btaddr and btaddr[0].lower() in ['-s', '--series']:
+		# Series battery configuration (explicit)
+		series_config = True
+		start_idx = 1
+		btaddr = btaddr[1:]  # Remove the configuration flag
+		
+	# Parse any config-related arguments
+	config_files = {}
+	filtered_btaddr = []
+	
+	# Format: BT_ADDRESS:CONFIG_PATH (e.g., AA:BB:CC:DD:EE:FF:/path/to/config.ini)
+	for addr in btaddr:
+		if ":" in addr and addr.count(":") > 5:  # More than 5 colons means it has a config path
+			parts = addr.split(":", 6)  # Split at most 6 times to get BT address and config path
+			bt_address = ":".join(parts[:6])  # First 6 parts form the BT address
+			config_path = parts[6]  # The rest is the config path
+			
+			config_files[bt_address] = config_path
+			filtered_btaddr.append(bt_address)
+			logger.info(f"Custom config for {bt_address}: {config_path}")
+		else:
+			filtered_btaddr.append(addr)
+	
+	# Update btaddr with filtered addresses
+	btaddr = filtered_btaddr
+	
+	# Create the appropriate battery object based on number of addresses
+	battery = None
+	try:
+		if len(btaddr) >= 2:
+			logger.info(f"Creating virtual battery in {'parallel' if not series_config else 'series'} configuration with {len(btaddr)} batteries")
+			
+			# Create batteries array from the addresses
+			batteries = []
+			for addr in btaddr:
+				try:
+					batteries.append(JbdBt(addr))
+					logger.info(f"Added battery with address {addr}")
+				except Exception as e:
+					logger.error(f"Error creating battery with address {addr}: {str(e)}")
+			
+			# Check if we have any valid batteries
+			if not batteries:
+				logger.error("No valid batteries could be created")
+				sys.exit(1)
+				
+			# Create virtual battery with up to 4 batteries
+			if len(batteries) > 4:
+				logger.warning(f"More than 4 battery addresses provided. Using only the first 4.")
+				batteries = batteries[:4]
+				
+			# Unpack the batteries list for the Virtual constructor
+			if len(batteries) == 1:
+				# Only one valid battery, use it directly
+				battery = batteries[0]
+				logger.info(f"Using single battery with address {batteries[0].address}")
+			elif len(batteries) == 2:
+				battery = Virtual(batteries[0], batteries[1], series_config=series_config, config_files=config_files)
+			elif len(batteries) == 3:
+				battery = Virtual(batteries[0], batteries[1], batteries[2], series_config=series_config, config_files=config_files)
+			elif len(batteries) == 4:
+				battery = Virtual(batteries[0], batteries[1], batteries[2], batteries[3], series_config=series_config, config_files=config_files)
+		elif len(btaddr) == 1:
+			# Single battery
+			logger.info(f"Using single battery with address {btaddr[0]}")
+			battery = JbdBt(btaddr[0])
+			
+			# If we have a config file for this address, load it
+			if btaddr[0] in config_files:
+				logger.info(f"Loading custom config for battery {btaddr[0]}: {config_files[btaddr[0]]}")
+				battery.load_custom_config(config_files[btaddr[0]])
+		else:
+			logger.error("ERROR >>> No battery address provided")
+			sys.exit(1)
+	except Exception as e:
+		logger.error(f"ERROR >>> Failed to initialize battery: {str(e)}")
+		sys.exit(1)
 
 	if battery is None:
 		logger.error("ERROR >>> No battery connection at " + str(btaddr))
 		sys.exit(1)
+		
+	# Register cleanup function to handle graceful shutdown
+	def cleanup():
+		logger.info("Shutting down dbus-btbattery...")
+		if isinstance(battery, Virtual):
+			for b in battery.batts:
+				if hasattr(b, 'stop'):
+					b.stop()
+		elif hasattr(battery, 'stop'):
+			battery.stop()
+			
+	import atexit
+	atexit.register(cleanup)
 
 	battery.log_settings()
 
