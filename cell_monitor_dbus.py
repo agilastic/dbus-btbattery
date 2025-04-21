@@ -47,13 +47,14 @@ class CellMonitorDbusService:
     detailed cell data per physical battery.
     """
     
-    def __init__(self, cell_monitor: CellMonitor, service_name=None):
+    def __init__(self, cell_monitor: CellMonitor, service_name=None, existing_service=None):
         """
         Initialize the D-Bus service for cell monitoring.
         
         Args:
             cell_monitor: The cell monitor instance
             service_name: Optional custom service name
+            existing_service: Optional existing D-Bus service to extend instead of creating new one
         """
         self.cell_monitor = cell_monitor
         
@@ -64,8 +65,13 @@ class CellMonitorDbusService:
         self.service_name = service_name
         logger.info(f"Creating cell monitor D-Bus service: {self.service_name}")
         
-        # Initialize D-Bus service
-        self._dbusservice = VeDbusService(self.service_name, get_bus())
+        # Use existing service or create new one
+        if existing_service:
+            logger.info("Using existing D-Bus service for cell monitoring")
+            self._dbusservice = existing_service
+        else:
+            # Initialize new D-Bus service
+            self._dbusservice = VeDbusService(self.service_name, get_bus())
         
         # Set up D-Bus paths
         self._setup_dbus_paths()
@@ -74,29 +80,31 @@ class CellMonitorDbusService:
         """Set up all the D-Bus paths for the cell monitor."""
         logger.info("Setting up D-Bus paths for cell monitor")
         
-        # Create the management objects
-        self._dbusservice.add_path("/Mgmt/ProcessName", __file__)
-        self._dbusservice.add_path("/Mgmt/ProcessVersion", "1.0")
-        self._dbusservice.add_path("/Mgmt/Connection", "Cell Monitor")
-        
-        # Create service info
-        self._dbusservice.add_path("/DeviceInstance", 0)
-        self._dbusservice.add_path("/ProductId", 0)
-        self._dbusservice.add_path("/ProductName", "Battery Cell Monitor")
-        self._dbusservice.add_path("/FirmwareVersion", "1.0")
-        self._dbusservice.add_path("/HardwareVersion", "1.0")
-        self._dbusservice.add_path("/Connected", 1)
-        self._dbusservice.add_path("/CustomName", "Cell Monitor", writeable=True)
+        # Only create management objects if using a new service
+        if not hasattr(self._dbusservice, '_dbusobjects') or len(self._dbusservice._dbusobjects) == 0:
+            # Create the management objects
+            self._dbusservice.add_path("/Mgmt/ProcessName", __file__)
+            self._dbusservice.add_path("/Mgmt/ProcessVersion", "1.0")
+            self._dbusservice.add_path("/Mgmt/Connection", "Cell Monitor")
+            
+            # Create service info
+            self._dbusservice.add_path("/DeviceInstance", 0)
+            self._dbusservice.add_path("/ProductId", 0)
+            self._dbusservice.add_path("/ProductName", "Battery Cell Monitor")
+            self._dbusservice.add_path("/FirmwareVersion", "1.0")
+            self._dbusservice.add_path("/HardwareVersion", "1.0")
+            self._dbusservice.add_path("/Connected", 1)
+            self._dbusservice.add_path("/CustomName", "Cell Monitor", writeable=True)
         
         # Settings
         self._dbusservice.add_path(
-            "/Settings/SampleInterval", 
+            "/Settings/CellMonitor/SampleInterval", 
             self.cell_monitor.sample_interval, 
             writeable=True,
             onchangecallback=self._handle_sample_interval_change
         )
         self._dbusservice.add_path(
-            "/Settings/AlertThreshold", 
+            "/Settings/CellMonitor/AlertThreshold", 
             self.cell_monitor.alert_threshold, 
             writeable=True,
             onchangecallback=self._handle_alert_threshold_change,
@@ -148,7 +156,7 @@ class CellMonitorDbusService:
         
         # Battery count
         self._dbusservice.add_path(
-            "/CellMonitor/BatteryCount", 
+            "/Parallel/BatteryCount", 
             0, 
             writeable=True
         )
@@ -170,12 +178,19 @@ class CellMonitorDbusService:
         
         # Create paths for each battery
         for battery_id in cell_data.get("batteries", {}):
-            battery_path_base = f"/CellMonitor/Batteries/{battery_id.replace(':', '_')}"
+            battery_path_base = f"/Parallel/Battery/{battery_id.replace(':', '_')}"
+            batt_key = battery_id.replace(':', '_')
+            batt_id_short = battery_id[-5:].replace(':', '')  # Last 5 chars without colons
             
             # Battery summary data
             self._dbusservice.add_path(
                 f"{battery_path_base}/CellCount", 
                 0, 
+                writeable=True
+            )
+            self._dbusservice.add_path(
+                f"{battery_path_base}/Name",
+                f"Battery {batt_id_short}",
                 writeable=True
             )
             self._dbusservice.add_path(
@@ -208,14 +223,35 @@ class CellMonitorDbusService:
                 writeable=True
             )
             
-            # JSON for cell voltages
+            # Individual cell voltage paths in CCGX-friendly format
+            battery_data = cell_data["batteries"].get(battery_id, {})
+            cell_count = battery_data.get("cell_count", 0)
+            
+            for i in range(cell_count):
+                # Add path for each cell using the battery ID in the path
+                self._dbusservice.add_path(
+                    f"{battery_path_base}/Cell/{i+1}/Volts",
+                    None,
+                    writeable=True,
+                    gettextcallback=lambda p, v: "{:.3f}V".format(v) if v is not None else "---"
+                )
+                
+                # Add balancing state path for each cell
+                self._dbusservice.add_path(
+                    f"{battery_path_base}/Cell/{i+1}/Balancing",
+                    0,
+                    writeable=True,
+                    gettextcallback=lambda p, v: "Yes" if v else "No"
+                )
+            
+            # JSON for cell voltages (for compatibility)
             self._dbusservice.add_path(
                 f"{battery_path_base}/CellVoltages", 
                 "[]", 
                 writeable=True
             )
             
-            # JSON for balancing state
+            # JSON for balancing state (for compatibility)
             self._dbusservice.add_path(
                 f"{battery_path_base}/Balancing", 
                 "[]", 
@@ -270,7 +306,7 @@ class CellMonitorDbusService:
             self._dbusservice["/CellMonitor/Statistics/LastUpdate"] = cell_data["timestamp"]
             
             # Update battery count
-            self._dbusservice["/CellMonitor/BatteryCount"] = len(cell_data["batteries"])
+            self._dbusservice["/Parallel/BatteryCount"] = len(cell_data["batteries"])
             
             # Update alerts
             alerts = cell_data["recent_alerts"]
@@ -290,12 +326,13 @@ class CellMonitorDbusService:
             # Update battery-specific data
             for battery_id, battery_data in cell_data["batteries"].items():
                 # Create path base with battery ID cleaned for D-Bus
-                battery_path_base = f"/CellMonitor/Batteries/{battery_id.replace(':', '_')}"
+                battery_path_base = f"/Parallel/Battery/{battery_id.replace(':', '_')}"
                 
                 # Ensure paths exist for this battery
                 if f"{battery_path_base}/CellCount" not in self._dbusservice._dbusobjects:
                     # This is a new battery, add paths for it
                     self._setup_battery_specific_paths()
+                    continue  # Skip this iteration as paths were just created
                 
                 # Update battery data
                 self._dbusservice[f"{battery_path_base}/CellCount"] = battery_data["cell_count"]
@@ -305,7 +342,27 @@ class CellMonitorDbusService:
                 self._dbusservice[f"{battery_path_base}/VoltageSpread"] = battery_data["voltage_spread"]
                 self._dbusservice[f"{battery_path_base}/LastUpdate"] = battery_data["last_update"]
                 
-                # Update cell voltages and balancing as JSON
+                # Update individual cell voltages and balancing
+                for i in range(battery_data["cell_count"]):
+                    # Get cell voltage and balancing state
+                    cell_voltage = None
+                    if i < len(battery_data["cell_voltages"]):
+                        cell_voltage = battery_data["cell_voltages"][i]
+                    
+                    balancing = False
+                    if i < len(battery_data["balancing"]):
+                        balancing = battery_data["balancing"][i]
+                    
+                    # Update D-Bus paths
+                    cell_voltage_path = f"{battery_path_base}/Cell/{i+1}/Volts"
+                    if cell_voltage_path in self._dbusservice._dbusobjects:
+                        self._dbusservice[cell_voltage_path] = cell_voltage
+                    
+                    cell_balance_path = f"{battery_path_base}/Cell/{i+1}/Balancing"
+                    if cell_balance_path in self._dbusservice._dbusobjects:
+                        self._dbusservice[cell_balance_path] = 1 if balancing else 0
+                
+                # Update JSON data (for compatibility)
                 self._dbusservice[f"{battery_path_base}/CellVoltages"] = json.dumps(battery_data["cell_voltages"])
                 self._dbusservice[f"{battery_path_base}/Balancing"] = json.dumps(battery_data["balancing"])
             
@@ -323,8 +380,13 @@ def get_dbus_service() -> Optional[CellMonitorDbusService]:
     """Get the global cell monitor D-Bus service instance"""
     return _cell_monitor_dbus_service
 
-def init_dbus_service() -> Optional[CellMonitorDbusService]:
-    """Initialize the cell monitor D-Bus service"""
+def init_dbus_service(existing_service=None) -> Optional[CellMonitorDbusService]:
+    """
+    Initialize the cell monitor D-Bus service
+    
+    Args:
+        existing_service: Optional existing D-Bus service to extend
+    """
     global _cell_monitor_dbus_service
     
     # Get cell monitor instance
@@ -335,7 +397,10 @@ def init_dbus_service() -> Optional[CellMonitorDbusService]:
     
     # Create service if it doesn't exist
     if _cell_monitor_dbus_service is None:
-        _cell_monitor_dbus_service = CellMonitorDbusService(cell_monitor)
+        _cell_monitor_dbus_service = CellMonitorDbusService(
+            cell_monitor, 
+            existing_service=existing_service
+        )
     
     return _cell_monitor_dbus_service
 

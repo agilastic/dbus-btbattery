@@ -339,13 +339,13 @@ def main():
             # Initialize the cell monitor
             cell_monitor_instance = cell_monitor.init_cell_monitor(battery_instance)
             
-            # Create D-Bus service for cell monitor
-            cell_monitor_service = cell_monitor_dbus.init_dbus_service()
+            # Create D-Bus service for cell monitor integrated with the main battery service
+            cell_monitor_service = cell_monitor_dbus.init_dbus_service(existing_service=dbus_service._dbusservice)
             
             # Add periodic update for cell monitor D-Bus service
             gobject.timeout_add(2000, lambda: cell_monitor_dbus.update_dbus_service() or True)
             
-            logger.info("Cell monitoring system initialized successfully")
+            logger.info("Cell monitoring system initialized successfully and integrated with main battery service")
         except Exception as e:
             logger.error(f"Failed to initialize cell monitoring system: {e}")
     
