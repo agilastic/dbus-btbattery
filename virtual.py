@@ -523,6 +523,7 @@ class Virtual(Battery):
             # This is needed for the cell monitor to show per-battery details
             if hasattr(battery, 'cells') and battery.cells:
                 # Preserve the battery's cells without modification
+                pass
             
             # FET status (in parallel, we need at least one battery to allow charge/discharge)
             if hasattr(battery, 'charge_fet') and battery.charge_fet is True:
