@@ -5,7 +5,7 @@ MbPage {
     id: root
     property string bindPrefix
     property VBusItem cellMonitorService: VBusItem { bind: "com.victronenergy.battery.cellmonitor" }
-    property VBusItem batteryCount: VBusItem { bind: "com.victronenergy.battery.cellmonitor/CellMonitor/BatteryCount" }
+    property VBusItem batteryCount: VBusItem { bind: "com.victronenergy.battery.cellmonitor/Parallel/BatteryCount" }
     property VBusItem minVoltage: VBusItem { bind: "com.victronenergy.battery.cellmonitor/CellMonitor/Statistics/MinVoltage" }
     property VBusItem maxVoltage: VBusItem { bind: "com.victronenergy.battery.cellmonitor/CellMonitor/Statistics/MaxVoltage" }
     property VBusItem avgVoltage: VBusItem { bind: "com.victronenergy.battery.cellmonitor/CellMonitor/Statistics/AvgVoltage" }
@@ -13,8 +13,8 @@ MbPage {
     property VBusItem lastUpdate: VBusItem { bind: "com.victronenergy.battery.cellmonitor/CellMonitor/Statistics/LastUpdate" }
     property VBusItem alertCount: VBusItem { bind: "com.victronenergy.battery.cellmonitor/CellMonitor/Alerts/Count" }
     property VBusItem latestAlert: VBusItem { bind: "com.victronenergy.battery.cellmonitor/CellMonitor/Alerts/Latest" }
-    property VBusItem sampleInterval: VBusItem { bind: "com.victronenergy.battery.cellmonitor/Settings/SampleInterval" }
-    property VBusItem alertThreshold: VBusItem { bind: "com.victronenergy.battery.cellmonitor/Settings/AlertThreshold" }
+    property VBusItem sampleInterval: VBusItem { bind: "com.victronenergy.battery.cellmonitor/Settings/CellMonitor/SampleInterval" }
+    property VBusItem alertThreshold: VBusItem { bind: "com.victronenergy.battery.cellmonitor/Settings/CellMonitor/AlertThreshold" }
     property VBusItem batteryData: VBusItem { bind: "com.victronenergy.battery.cellmonitor/CellMonitor/Data" }
 
     title: "Battery Cell Monitor"
@@ -44,8 +44,8 @@ MbPage {
                 
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    anchors.right: parent.right
-                    anchors.rightMargin: 5
+                    anchors.right: detailsButton.left
+                    anchors.rightMargin: 10
                     font.pixelSize: 14
                     color: "white"
                     text: {
@@ -53,6 +53,33 @@ MbPage {
                             return minVoltage.toFixed(3) + "V - " + maxVoltage.toFixed(3) + "V (" + spread.toFixed(3) + "V)"
                         } else {
                             return "No data"
+                        }
+                    }
+                }
+                
+                Rectangle {
+                    id: detailsButton
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.right: parent.right
+                    anchors.rightMargin: 5
+                    width: 70
+                    height: 25
+                    color: "#4a87ba"
+                    radius: 4
+                    
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Details"
+                        color: "white"
+                        font.pixelSize: 12
+                    }
+                    
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            // Navigate to battery details page
+                            root.pageStack.push(Qt.resolvedUrl("PageBatteryPhysicalDetail.qml"), 
+                                                { batteryId: batteryId.replace(":", "_") })
                         }
                     }
                 }

@@ -3,8 +3,6 @@ This is a driver for VenusOS devices (As of yet only tested on Raspberry Pi runn
 
 The driver will communicate with a Battery Management System (BMS) via Bluetooth and publish this data to the VenusOS system. 
 
-This project is derived from Louis Van Der Walt's dbus-serialbattery found here: https://github.com/Louisvdw/dbus-serialbattery
-
 ## Prerequisites
 - VenusOS device (tested on Raspberry Pi with VenusOS v2.92+)
 - Supported BMS with Bluetooth capability (currently JBD BMS is fully supported)
@@ -55,7 +53,7 @@ opkg install git
 9) Clone dbus-btbattery repo
 ```
 cd /opt/victronenergy/
-git clone https://github.com/bradcagle/dbus-btbattery.git
+git clone https://github.com/agilastic/dbus-btbattery
 ```
 
 10) Run the battery monitor with your BMS Bluetooth address

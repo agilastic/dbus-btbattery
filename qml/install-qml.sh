@@ -62,6 +62,8 @@ cp PageBatterySetup.qml /opt/victronenergy/gui/qml/
 cp PageLynxIonIo.qml /opt/victronenergy/gui/qml/
 # copy new PageBatteryCellMonitor.qml
 cp PageBatteryCellMonitor.qml /opt/victronenergy/gui/qml/
+# copy new PageBatteryPhysicalDetail.qml
+cp PageBatteryPhysicalDetail.qml /opt/victronenergy/gui/qml/
 
 
 # get current Venus OS version
@@ -83,6 +85,7 @@ if (( $venusVersionNumber < $versionNumber )); then
     fileList+=" $qmlDir/PageBatterySettings.qml"
     fileList+=" $qmlDir/PageBatterySetup.qml"
     fileList+=" $qmlDir/PageLynxIonIo.qml"
+    fileList+=" $qmlDir/PageBatteryPhysicalDetail.qml"
     for file in $fileList ; do
         sed -i -e 's/VisibleItemModel/VisualItemModel/' "$file"
 	done

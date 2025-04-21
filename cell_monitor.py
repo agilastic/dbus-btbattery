@@ -235,25 +235,40 @@ class CellMonitor:
             return
         
         with self.lock:
+            active_battery_ids = set()
+            
             # Update data for each physical battery
             for battery in self.virtual_battery.batts:
-                if not hasattr(battery, 'online') or not battery.online:
-                    continue
+                # Even if battery is marked as offline, try to get its data
+                # for a more complete cell monitoring view
                 
                 # Skip batteries without cells
                 if not hasattr(battery, 'cells') or not battery.cells:
                     continue
                 
                 # Get battery ID (address or another unique identifier)
+                # Use a descriptive name if possible
                 battery_id = getattr(battery, 'address', str(id(battery)))
+                active_battery_ids.add(battery_id)
                 
                 # Create battery data object if it doesn't exist
                 if battery_id not in self.physical_batteries:
                     cell_count = getattr(battery, 'cell_count', len(battery.cells))
+                    name = getattr(battery, 'name', f"Battery {battery_id[-5:].replace(':', '')}")
+                    logger.info(f"Adding new physical battery to cell monitor: {name} ({battery_id})")
                     self.physical_batteries[battery_id] = PhysicalBatteryCellData(battery_id, cell_count)
                 
                 # Update cell data
-                self.physical_batteries[battery_id].update_cell_data(battery)
+                updated = self.physical_batteries[battery_id].update_cell_data(battery)
+                if updated and hasattr(battery, 'online') and not battery.online:
+                    # Log that we got data from a battery marked as offline
+                    logger.debug(f"Updated cell data for offline battery: {battery_id}")
+            
+            # Clean up batteries that are no longer present
+            batteries_to_remove = set(self.physical_batteries.keys()) - active_battery_ids
+            for battery_id in batteries_to_remove:
+                logger.info(f"Removing inactive battery from cell monitor: {battery_id}")
+                del self.physical_batteries[battery_id]
     
     def _check_alerts(self) -> None:
         """Check for alert conditions across all batteries"""

@@ -178,9 +178,17 @@ class CellMonitorDbusService:
         
         # Create paths for each battery
         for battery_id in cell_data.get("batteries", {}):
-            battery_path_base = f"/Parallel/Battery/{battery_id.replace(':', '_')}"
+            # Clean up battery ID for D-Bus path
             batt_key = battery_id.replace(':', '_')
             batt_id_short = battery_id[-5:].replace(':', '')  # Last 5 chars without colons
+            battery_path_base = f"/Parallel/Battery/{batt_key}"
+            
+            # Skip if this battery already has paths set up
+            if f"{battery_path_base}/CellCount" in self._dbusservice._dbusobjects:
+                logger.debug(f"Battery {battery_id} already has D-Bus paths set up")
+                continue
+            
+            logger.info(f"Setting up D-Bus paths for battery: {battery_id}")
             
             # Battery summary data
             self._dbusservice.add_path(
@@ -244,14 +252,14 @@ class CellMonitorDbusService:
                     gettextcallback=lambda p, v: "Yes" if v else "No"
                 )
             
-            # JSON for cell voltages (for compatibility)
+            # JSON for cell voltages (for compatibility with QML)
             self._dbusservice.add_path(
                 f"{battery_path_base}/CellVoltages", 
                 "[]", 
                 writeable=True
             )
             
-            # JSON for balancing state (for compatibility)
+            # JSON for balancing state (for compatibility with QML)
             self._dbusservice.add_path(
                 f"{battery_path_base}/Balancing", 
                 "[]", 
@@ -322,6 +330,14 @@ class CellMonitorDbusService:
             
             # Update complete data as JSON
             self._dbusservice["/CellMonitor/Data"] = json.dumps(cell_data)
+            
+            # If there are new batteries in the data that we don't have paths for yet,
+            # set up the paths for them
+            for battery_id in cell_data["batteries"]:
+                battery_path_base = f"/Parallel/Battery/{battery_id.replace(':', '_')}"
+                if f"{battery_path_base}/CellCount" not in self._dbusservice._dbusobjects:
+                    logger.info(f"Setting up D-Bus paths for new battery: {battery_id}")
+                    self._setup_battery_specific_paths()
             
             # Update battery-specific data
             for battery_id, battery_data in cell_data["batteries"].items():

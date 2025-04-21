@@ -510,12 +510,19 @@ class Virtual(Battery):
                 battery.cell_count is not None and battery.cell_count > 0):
                 self.cell_count = battery.cell_count
             
-            # Cells: use first battery's cells for parallel display
+            # For virtual battery in parallel mode, collect all batteries' cells 
+            # but only use the first battery's cells for the main display
+            # Individual physical battery data is preserved in PhysicalBatteryCellData
             if (not self.cells and hasattr(battery, 'cells') and 
                 battery.cells and not first_battery_with_cells):
                 # Deep copy to avoid modifying original
                 self.cells = copy.deepcopy(battery.cells)
                 first_battery_with_cells = battery
+                
+            # Ensure all physical batteries maintain their cell data
+            # This is needed for the cell monitor to show per-battery details
+            if hasattr(battery, 'cells') and battery.cells:
+                # Preserve the battery's cells without modification
             
             # FET status (in parallel, we need at least one battery to allow charge/discharge)
             if hasattr(battery, 'charge_fet') and battery.charge_fet is True:
