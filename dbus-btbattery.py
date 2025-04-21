@@ -12,9 +12,17 @@ import os
 import signal
 import argparse
 import logging
+import utils
 import time
 from threading import Thread, Event
 from typing import List, Dict, Optional, Tuple
+from jbdbt import JbdBt
+from virtual import Virtual
+from dbus_interface import VirtualBatteryDbusService
+import utils
+from utils import (
+    logger, DRIVER_VERSION, DRIVER_SUBVERSION
+)
 
 # Configure logging
 logging.basicConfig(
@@ -32,14 +40,6 @@ else:
     from dbus.mainloop.glib import DBusGMainLoop
     from gi.repository import GLib as gobject
 
-# Import the necessary modules
-from jbdbt import JbdBt
-from virtual import Virtual
-from dbus_interface import VirtualBatteryDbusService
-import utils
-from utils import (
-    logger, DRIVER_VERSION, DRIVER_SUBVERSION
-)
 
 # Global variables
 running = True
