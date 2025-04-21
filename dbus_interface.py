@@ -27,7 +27,9 @@ except ImportError:
         # Fallback for development environments
         from vedbus_mock import VeDbusService
 
-# Import utility functions
+# Import utils module to access configuration and logging
+import utils
+# Import specific utility functions
 from utils import logger, TIME_TO_SOC_POINTS, SOC_LOW_WARNING, BATTERY_CELL_DATA_FORMAT
 
 def get_bus() -> dbus.Bus:
