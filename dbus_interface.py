@@ -256,38 +256,58 @@ class VirtualBatteryDbusService:
         # 2: Format: /Cell/#/Volts
         # 3: Both formats 1 and 2
         
-        if BATTERY_CELL_DATA_FORMAT > 0 and self.battery.cell_count > 0:
-            # Determine cell path format once, outside the loop
-            cell_path_format = "/Cell/%s/Volts" if (BATTERY_CELL_DATA_FORMAT & 2) else "/Voltages/Cell%s"
+        if BATTERY_CELL_DATA_FORMAT > 0 and hasattr(self.battery, 'cell_count') and self.battery.cell_count > 0:
+            logger.info(f"Setting up cell paths for {self.battery.cell_count} cells with format {BATTERY_CELL_DATA_FORMAT}")
             
+            # Support both cell data formats
+            formats = []
+            if BATTERY_CELL_DATA_FORMAT & 1:
+                formats.append("/Voltages/Cell%s")
+            if BATTERY_CELL_DATA_FORMAT & 2:
+                formats.append("/Cell/%s/Volts")
+            
+            # Create paths for each cell
             for i in range(1, self.battery.cell_count + 1):
-                self._dbusservice.add_path(
-                    cell_path_format % (str(i)),
-                    None,
-                    writeable=True,
-                    gettextcallback=lambda p, v: "{:0.3f}V".format(v) if v is not None else "---",
-                )
+                for cell_path_format in formats:
+                    cell_path = cell_path_format % (str(i))
+                    try:
+                        self._dbusservice.add_path(
+                            cell_path,
+                            None,
+                            writeable=True,
+                            gettextcallback=lambda p, v: "{:0.3f}V".format(v) if v is not None else "---",
+                        )
+                    except Exception as e:
+                        logger.warning(f"Could not create cell path {cell_path}: {e}")
+                
+                # Add balance paths if format 1 is enabled
                 if BATTERY_CELL_DATA_FORMAT & 1:
+                    try:
+                        balance_path = f"/Balances/Cell{i}"
+                        self._dbusservice.add_path(balance_path, None, writeable=True)
+                    except Exception as e:
+                        logger.warning(f"Could not create balance path {balance_path}: {e}")
+            
+            # Add summary paths for each format
+            for fmt in formats:
+                # Determine path base (either "Cell" or "Voltages")
+                path_base = "Cell" if fmt.startswith("/Cell") else "Voltages"
+                
+                try:
                     self._dbusservice.add_path(
-                        "/Balances/Cell%s" % (str(i)), None, writeable=True
+                        f"/{path_base}/Sum",
+                        None,
+                        writeable=True,
+                        gettextcallback=lambda p, v: "{:2.2f}V".format(v) if v is not None else "---",
                     )
-            
-            # Determine path base once
-            path_base = "Cell" if (BATTERY_CELL_DATA_FORMAT & 2) else "Voltages"
-            
-            # Add summary paths
-            self._dbusservice.add_path(
-                f"/{path_base}/Sum",
-                None,
-                writeable=True,
-                gettextcallback=lambda p, v: "{:2.2f}V".format(v) if v is not None else "---",
-            )
-            self._dbusservice.add_path(
-                f"/{path_base}/Diff",
-                None,
-                writeable=True,
-                gettextcallback=lambda p, v: "{:0.3f}V".format(v) if v is not None else "---",
-            )
+                    self._dbusservice.add_path(
+                        f"/{path_base}/Diff",
+                        None,
+                        writeable=True,
+                        gettextcallback=lambda p, v: "{:0.3f}V".format(v) if v is not None else "---",
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not create summary path for {path_base}: {e}")
     
     def _setup_parallel_specific_paths(self) -> None:
         """Set up additional dbus paths specific to parallel battery configuration."""
@@ -528,6 +548,27 @@ class VirtualBatteryDbusService:
             voltage_sum = 0
             cell_count = min(len(self.battery.cells), self.battery.cell_count)
             
+            # First check if paths exist, if not create them
+            for i in range(cell_count):
+                cell_path = cell_path_format % (str(i + 1))
+                if cell_path not in self._dbusservice._dbusobjects:
+                    # Add path that was missing
+                    self._dbusservice.add_path(
+                        cell_path,
+                        None,
+                        writeable=True,
+                        gettextcallback=lambda p, v: "{:0.3f}V".format(v) if v is not None else "---",
+                    )
+                    logger.info(f"Created missing cell voltage path: {cell_path}")
+                
+                if BATTERY_CELL_DATA_FORMAT & 1 and hasattr(self.battery, 'get_cell_balancing'):
+                    balance_path = f"/Balances/Cell{i + 1}"
+                    if balance_path not in self._dbusservice._dbusobjects:
+                        # Add path that was missing
+                        self._dbusservice.add_path(balance_path, None, writeable=True)
+                        logger.info(f"Created missing cell balance path: {balance_path}")
+            
+            # Now update the values
             for i in range(cell_count):
                 if not hasattr(self.battery, 'get_cell_voltage'):
                     continue
@@ -547,6 +588,25 @@ class VirtualBatteryDbusService:
                 
                 if cell_voltage:
                     voltage_sum += cell_voltage
+            
+            # Make sure summary paths exist
+            if f"/{path_base}/Sum" not in self._dbusservice._dbusobjects:
+                self._dbusservice.add_path(
+                    f"/{path_base}/Sum",
+                    None,
+                    writeable=True,
+                    gettextcallback=lambda p, v: "{:2.2f}V".format(v) if v is not None else "---",
+                )
+                logger.info(f"Created missing voltage sum path: /{path_base}/Sum")
+                
+            if f"/{path_base}/Diff" not in self._dbusservice._dbusobjects:
+                self._dbusservice.add_path(
+                    f"/{path_base}/Diff",
+                    None,
+                    writeable=True,
+                    gettextcallback=lambda p, v: "{:0.3f}V".format(v) if v is not None else "---",
+                )
+                logger.info(f"Created missing voltage diff path: /{path_base}/Diff")
             
             # Update summary data
             try:
