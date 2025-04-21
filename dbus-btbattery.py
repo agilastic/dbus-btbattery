@@ -5,6 +5,7 @@
 Enhanced dbus-btbattery service with improved parallel battery support.
 This script connects to multiple Bluetooth BMS devices and creates virtual batteries
 in series or parallel configurations.
+Includes detailed cell voltage monitoring for individual physical batteries.
 """
 
 import sys
@@ -12,17 +13,18 @@ import os
 import signal
 import argparse
 import logging
-import utils
 import time
 from threading import Thread, Event
 from typing import List, Dict, Optional, Tuple
 from jbdbt import JbdBt
 from virtual import Virtual
 from dbus_interface import VirtualBatteryDbusService
-import utils
 from utils import (
     logger, DRIVER_VERSION, DRIVER_SUBVERSION
 )
+# Import cell monitoring components
+import cell_monitor
+import cell_monitor_dbus
 
 # Configure logging
 logging.basicConfig(
@@ -254,6 +256,13 @@ def cleanup():
     # Signal threads to stop
     stop_event.set()
     
+    # Stop cell monitoring if active
+    try:
+        logger.info("Stopping cell monitoring system...")
+        cell_monitor.shutdown_cell_monitor()
+    except Exception as e:
+        logger.error(f"Error shutting down cell monitor: {e}")
+    
     if battery_instance:
         logger.info("Stopping battery instance...")
         try:
@@ -321,6 +330,24 @@ def main():
     poll_interval_ms = getattr(battery_instance, 'poll_interval', 1000)
     logger.info(f"Starting battery polling every {poll_interval_ms}ms")
     gobject.timeout_add(poll_interval_ms, lambda: poll_battery(mainloop))
+    
+    # Initialize cell monitoring system (only for virtual batteries in multi-battery mode)
+    cell_monitor_service = None
+    if isinstance(battery_instance, Virtual) and len(battery_instance.batts) > 1:
+        logger.info("Initializing cell monitoring system...")
+        try:
+            # Initialize the cell monitor
+            cell_monitor_instance = cell_monitor.init_cell_monitor(battery_instance)
+            
+            # Create D-Bus service for cell monitor
+            cell_monitor_service = cell_monitor_dbus.init_dbus_service()
+            
+            # Add periodic update for cell monitor D-Bus service
+            gobject.timeout_add(2000, lambda: cell_monitor_dbus.update_dbus_service() or True)
+            
+            logger.info("Cell monitoring system initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize cell monitoring system: {e}")
     
     # Enter main loop
     logger.info("Entering main loop")

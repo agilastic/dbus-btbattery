@@ -168,4 +168,18 @@ For Raspberry Pi users experiencing Bluetooth issues, updated firmware is includ
 ## QML Integration
 The `qml` directory contains QML pages for VenusOS GUI integration. Run `qml/install-qml.sh` to install these pages, which will add battery screens to your VenusOS display.
 
+## Cell Voltage Monitoring
+The system now includes advanced cell voltage monitoring capabilities for virtual battery setups with multiple physical batteries:
+
+- Tracks individual cell voltages across all physical batteries
+- Displays min/max/average voltage values for each battery
+- Records historical voltage data for trend analysis
+- Provides visual indication of cell imbalances
+- Generates alerts for critical voltage differences
+- Supports both series and parallel configurations
+
+The cell monitor is automatically enabled when running with multiple batteries and is accessible through the "Cell Monitor" menu in the Battery screen.
+
+For more details, see the [Cell Monitoring Guide](CELL_MONITORING_GUIDE.md).
+
 NOTES: This driver is far from complete, so some things will probably be broken. Also only JBD BMS is currently supported.

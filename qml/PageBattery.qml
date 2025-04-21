@@ -271,6 +271,17 @@ MbPage {
                 }
             }
         }
+        
+        MbSubMenu {
+            property VBusItem cellMonitorService: VBusItem { bind: "com.victronenergy.battery.cellmonitor/CellMonitor/BatteryCount" }
+            description: qsTr("Cell Monitor")
+            show: cellMonitorService.valid && cellMonitorService.value > 0
+            subpage: Component {
+                PageBatteryCellMonitor {
+                    bindPrefix: service.path("")
+                }
+            }
+        }
 
         /*MbSubMenu {
             description: qsTr("Setup")

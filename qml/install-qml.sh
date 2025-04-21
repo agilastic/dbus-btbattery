@@ -60,6 +60,8 @@ cp PageBatterySettings.qml /opt/victronenergy/gui/qml/
 cp PageBatterySetup.qml /opt/victronenergy/gui/qml/
 # copy new PageLynxIonIo.qml
 cp PageLynxIonIo.qml /opt/victronenergy/gui/qml/
+# copy new PageBatteryCellMonitor.qml
+cp PageBatteryCellMonitor.qml /opt/victronenergy/gui/qml/
 
 
 # get current Venus OS version
@@ -76,6 +78,7 @@ if (( $venusVersionNumber < $versionNumber )); then
     echo -n "Venus OS $(head -n 1 /opt/victronenergy/version) is older than v3.00~14. Replacing VisibleItemModel with VisualItemModel... "
     fileList="$qmlDir/PageBattery.qml"
     fileList+=" $qmlDir/PageBatteryCellVoltages.qml"
+    fileList+=" $qmlDir/PageBatteryCellMonitor.qml"
     fileList+=" $qmlDir/PageBatteryParameters.qml"
     fileList+=" $qmlDir/PageBatterySettings.qml"
     fileList+=" $qmlDir/PageBatterySetup.qml"
