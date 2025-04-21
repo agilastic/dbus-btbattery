@@ -352,7 +352,7 @@ class VirtualBatteryDbusService:
                 try:
                     # For the '/Voltages/Cell%s' format, use 'Cell<BATTERY>-<CELL>'
                     if BATTERY_CELL_DATA_FORMAT & 1:
-                        cell_path = f"/Voltages/Cell{batt_num}-{cell_num}"
+                        cell_path = f"/Voltages/Cell{batt_num}X{cell_num}"
                         try:
                             self._dbusservice.add_path(
                                 cell_path,
@@ -366,7 +366,7 @@ class VirtualBatteryDbusService:
 
                         # Balance path for this cell
                         try:
-                            balance_path = f"/Balances/Cell{batt_num}-{cell_num}"
+                            balance_path = f"/Balances/Cell{batt_num}X{cell_num}"
                             self._dbusservice.add_path(balance_path, None, writeable=True)
                             logger.debug(f"Created cell balance path: {balance_path}")
                         except Exception as e:
@@ -374,7 +374,7 @@ class VirtualBatteryDbusService:
 
                     # For the '/Cell/%s/Volts' format, use 'Cell/<BATTERY>-<CELL>/Volts'
                     if BATTERY_CELL_DATA_FORMAT & 2:
-                        cell_path = f"/Cell/{batt_num}-{cell_num}/Volts"
+                        cell_path = f"/Cell/{batt_num}X{cell_num}/Volts"
                         try:
                             self._dbusservice.add_path(
                                 cell_path,
@@ -699,8 +699,8 @@ class VirtualBatteryDbusService:
                 return
                 
             # Determine path formats once
-            voltage_format = "/Voltages/Cell%s-%s" if (BATTERY_CELL_DATA_FORMAT & 1) else None
-            cell_format = "/Cell/%s-%s/Volts" if (BATTERY_CELL_DATA_FORMAT & 2) else None
+            voltage_format = "/Voltages/Cell%sX%s" if (BATTERY_CELL_DATA_FORMAT & 1) else None
+            cell_format = "/Cell/%sX%s/Volts" if (BATTERY_CELL_DATA_FORMAT & 2) else None
             
             # For each physical battery (using original index in self.battery.batts)
             for batt_idx, physical_battery in enumerate(self.battery.batts):
@@ -786,7 +786,7 @@ class VirtualBatteryDbusService:
                     
                     # Update balancing status (if format 1 is enabled)
                     if BATTERY_CELL_DATA_FORMAT & 1:
-                        balance_path = f"/Balances/Cell{batt_num}-{cell_num}"
+                        balance_path = f"/Balances/Cell{batt_num}X{cell_num}"
                         
                         # Get balancing state from the specific physical battery
                         is_balancing = False
