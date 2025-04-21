@@ -183,9 +183,6 @@ class DbusHelper:
             writeable=True,
             gettextcallback=lambda p, v: "{:0.0f}Ah".format(v),
         )
-        # Not used at this stage
-        # self._dbusservice.add_path('/System/MinTemperatureCellId', None, writeable=True)
-        # self._dbusservice.add_path('/System/MaxTemperatureCellId', None, writeable=True)
 
         # Create SOC, DC and System items
         self._dbusservice.add_path("/Soc", None, writeable=True)

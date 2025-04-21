@@ -752,7 +752,75 @@ class Virtual(Battery):
         # Update allow flags
         self.control_allow_charge = self.control_charge_current > 0
         self.control_allow_discharge = self.control_discharge_current > 0
-    
+
+
+
+
+    def get_physical_battery_cell_voltage(self, battery_index: int, cell_index: int) -> Optional[float]:
+        """
+        Get cell voltage from a specific physical battery.
+
+        Args:
+            battery_index: Index of the physical battery (0-based)
+            cell_index: Index of the cell in the physical battery (0-based)
+
+        Returns:
+            Cell voltage or None if not available
+        """
+        if not hasattr(self, 'batts') or battery_index >= len(self.batts):
+            return None
+
+        battery = self.batts[battery_index]
+
+        # Check if battery is online
+        if hasattr(battery, 'online') and not battery.online:
+            return None
+
+        # Try to get cell voltage using get_cell_voltage method
+        if hasattr(battery, 'get_cell_voltage'):
+            return battery.get_cell_voltage(cell_index)
+
+        # Try to get cell voltage directly from cells array
+        if (hasattr(battery, 'cells') and battery.cells and
+            cell_index < len(battery.cells) and
+            hasattr(battery.cells[cell_index], 'voltage')):
+            return battery.cells[cell_index].voltage
+
+        return None
+
+    def get_physical_battery_cell_balancing(self, battery_index: int, cell_index: int) -> bool:
+        """
+        Get cell balancing state from a specific physical battery.
+
+        Args:
+            battery_index: Index of the physical battery (0-based)
+            cell_index: Index of the cell in the physical battery (0-based)
+
+        Returns:
+            True if cell is balancing, False otherwise
+        """
+        if not hasattr(self, 'batts') or battery_index >= len(self.batts):
+            return False
+
+        battery = self.batts[battery_index]
+
+        # Check if battery is online
+        if hasattr(battery, 'online') and not battery.online:
+            return False
+
+        # Try to get balancing state using get_cell_balancing method
+        if hasattr(battery, 'get_cell_balancing'):
+            balancing = battery.get_cell_balancing(cell_index)
+            return balancing == 1 if isinstance(balancing, int) else bool(balancing)
+
+        # Try to get balancing state directly from cells array
+        if (hasattr(battery, 'cells') and battery.cells and
+            cell_index < len(battery.cells) and
+            hasattr(battery.cells[cell_index], 'balance')):
+            return bool(battery.cells[cell_index].balance)
+
+        return False
+
     def log_settings(self) -> None:
         """Log virtual battery settings and configuration."""
         logger.info(f"--- Virtual Battery ({'Series' if self.series_config else 'Parallel'}) ---")

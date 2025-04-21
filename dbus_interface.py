@@ -268,33 +268,40 @@ class VirtualBatteryDbusService:
             if BATTERY_CELL_DATA_FORMAT & 2:
                 formats.append("/Cell/%s/Volts")
             
-            # Create paths for each cell
-            for i in range(1, self.battery.cell_count + 1):
-                for cell_path_format in formats:
-                    cell_path = cell_path_format % (str(i))
-                    try:
-                        self._dbusservice.add_path(
-                            cell_path,
-                            None,
-                            writeable=True,
-                            gettextcallback=lambda p, v: "{:0.3f}V".format(v) if v is not None else "---",
-                        )
-                    except Exception as e:
-                        logger.warning(f"Could not create cell path {cell_path}: {e}")
-                
-                # Add balance paths if format 1 is enabled
-                if BATTERY_CELL_DATA_FORMAT & 1:
-                    try:
-                        balance_path = f"/Balances/Cell{i}"
-                        self._dbusservice.add_path(balance_path, None, writeable=True)
-                    except Exception as e:
-                        logger.warning(f"Could not create balance path {balance_path}: {e}")
-            
+            # Check if we're dealing with a virtual battery with multiple physical batteries
+            is_virtual_multi = (hasattr(self.battery, 'batts') and len(self.battery.batts) > 1)
+
+            # For virtual batteries with multiple physical batteries, we need to set up paths for all cells of all batteries
+            if is_virtual_multi and not self.battery.series_config:  # Only for parallel configurations
+                self._setup_virtual_battery_cell_paths(formats)
+            else:
+                # Create paths for each cell (single battery or series virtual battery case)
+                for i in range(1, self.battery.cell_count + 1):
+                    for cell_path_format in formats:
+                        cell_path = cell_path_format % (str(i))
+                        try:
+                            self._dbusservice.add_path(
+                                cell_path,
+                                None,
+                                writeable=True,
+                                gettextcallback=lambda p, v: "{:0.3f}V".format(v) if v is not None else "---",
+                            )
+                        except Exception as e:
+                            logger.warning(f"Could not create cell path {cell_path}: {e}")
+
+                    # Add balance paths if format 1 is enabled
+                    if BATTERY_CELL_DATA_FORMAT & 1:
+                        try:
+                            balance_path = f"/Balances/Cell{i}"
+                            self._dbusservice.add_path(balance_path, None, writeable=True)
+                        except Exception as e:
+                            logger.warning(f"Could not create balance path {balance_path}: {e}")
+
             # Add summary paths for each format
             for fmt in formats:
                 # Determine path base (either "Cell" or "Voltages")
                 path_base = "Cell" if fmt.startswith("/Cell") else "Voltages"
-                
+
                 try:
                     self._dbusservice.add_path(
                         f"/{path_base}/Sum",
@@ -310,46 +317,104 @@ class VirtualBatteryDbusService:
                     )
                 except Exception as e:
                     logger.warning(f"Could not create summary path for {path_base}: {e}")
-    
+
+    def _setup_virtual_battery_cell_paths(self, formats):
+        """
+        Set up cell paths for all physical batteries in a virtual battery configuration.
+        Uses the format Voltages/Cell<BATTERY>-<CELL> for the first format.
+
+        Args:
+            formats: List of path format strings
+        """
+        logger.info(f"Setting up cell paths for virtual battery with {len(self.battery.batts)} physical batteries")
+
+        # For each physical battery
+        for batt_idx, physical_battery in enumerate(self.battery.batts, 1):
+            # Skip batteries that are offline or don't have cells
+            if not hasattr(physical_battery, 'online') or not physical_battery.online:
+                continue
+
+            if not hasattr(physical_battery, 'cells') or not physical_battery.cells:
+                continue
+
+            cell_count = getattr(physical_battery, 'cell_count', len(physical_battery.cells))
+            if cell_count <= 0:
+                continue
+
+            # Create paths for each cell in this battery
+            for cell_idx in range(1, cell_count + 1):
+                # For the '/Voltages/Cell%s' format, use 'Cell<BATTERY>-<CELL>'
+                if BATTERY_CELL_DATA_FORMAT & 1:
+                    cell_path = f"/Voltages/Cell{batt_idx}-{cell_idx}"
+                    try:
+                        self._dbusservice.add_path(
+                            cell_path,
+                            None,
+                            writeable=True,
+                            gettextcallback=lambda p, v: "{:0.3f}V".format(v) if v is not None else "---",
+                        )
+                    except Exception as e:
+                        logger.warning(f"Could not create cell path {cell_path}: {e}")
+
+                    # Balance path for this cell
+                    try:
+                        balance_path = f"/Balances/Cell{batt_idx}-{cell_idx}"
+                        self._dbusservice.add_path(balance_path, None, writeable=True)
+                    except Exception as e:
+                        logger.warning(f"Could not create balance path {balance_path}: {e}")
+
+                # For the '/Cell/%s/Volts' format, use 'Cell/<BATTERY>-<CELL>/Volts'
+                if BATTERY_CELL_DATA_FORMAT & 2:
+                    cell_path = f"/Cell/{batt_idx}-{cell_idx}/Volts"
+                    try:
+                        self._dbusservice.add_path(
+                            cell_path,
+                            None,
+                            writeable=True,
+                            gettextcallback=lambda p, v: "{:0.3f}V".format(v) if v is not None else "---",
+                        )
+                    except Exception as e:
+                        logger.warning(f"Could not create cell path {cell_path}: {e}")
+
     def _setup_parallel_specific_paths(self) -> None:
         """Set up additional dbus paths specific to parallel battery configuration."""
         # Imbalance indicators
         self._dbusservice.add_path(
-            "/Parallel/VoltageImbalance", 
-            0, 
+            "/Parallel/VoltageImbalance",
+            0,
             writeable=True,
             gettextcallback=lambda p, v: "Yes" if v else "No",
         )
         self._dbusservice.add_path(
-            "/Parallel/CurrentImbalance", 
-            0, 
+            "/Parallel/CurrentImbalance",
+            0,
             writeable=True,
             gettextcallback=lambda p, v: "Yes" if v else "No",
         )
         self._dbusservice.add_path(
-            "/Parallel/SocImbalance", 
-            0, 
+            "/Parallel/SocImbalance",
+            0,
             writeable=True,
             gettextcallback=lambda p, v: "Yes" if v else "No",
         )
-        
+
         # Component battery info
         if hasattr(self.battery, 'batts'):
             self._dbusservice.add_path(
-                "/Parallel/TotalBatteries", 
-                len(self.battery.batts), 
+                "/Parallel/TotalBatteries",
+                len(self.battery.batts),
                 writeable=True
             )
             self._dbusservice.add_path(
-                "/Parallel/ActiveBatteries", 
-                0, 
+                "/Parallel/ActiveBatteries",
+                0,
                 writeable=True
             )
-    
+
     def _get_soc_points(self) -> List[int]:
         """
         Get the SOC points for TimeToSoc paths.
-        
+
         Returns:
             List of SOC percentage points
         """
@@ -357,12 +422,12 @@ class VirtualBatteryDbusService:
         if TIME_TO_SOC_POINTS:
             return TIME_TO_SOC_POINTS
         return [100, 0]  # Default minimum
-    
+
     def update(self) -> bool:
         """
         Update all dbus values from the current state of the battery.
         This should be called after the battery has been refreshed.
-        
+
         Returns:
             True if the update was successful, False otherwise
         """
@@ -371,27 +436,27 @@ class VirtualBatteryDbusService:
             if not hasattr(self.battery, 'online') or not self.battery.online:
                 self._dbusservice["/Connected"] = 0
                 return False
-            
+
             # Basic status
             self._dbusservice["/Connected"] = 1
-            
+
             # Handle potential None values safely
             if hasattr(self.battery, 'soc') and self.battery.soc is not None:
                 self._dbusservice["/Soc"] = round(self.battery.soc, 2)
-                
+
             if hasattr(self.battery, 'voltage') and self.battery.voltage is not None:
                 self._dbusservice["/Dc/0/Voltage"] = round(self.battery.voltage, 2)
-                
+
             if hasattr(self.battery, 'current') and self.battery.current is not None:
                 self._dbusservice["/Dc/0/Current"] = round(self.battery.current, 2)
-            
+
             # Power calculation
-            if (hasattr(self.battery, 'voltage') and self.battery.voltage is not None and 
+            if (hasattr(self.battery, 'voltage') and self.battery.voltage is not None and
                 hasattr(self.battery, 'current') and self.battery.current is not None):
                 self._dbusservice["/Dc/0/Power"] = round(self.battery.voltage * self.battery.current, 2)
             else:
                 self._dbusservice["/Dc/0/Power"] = None
-            
+
             # Safe method calls with hasattr checks
             # Temperature
             if hasattr(self.battery, 'get_temp'):
@@ -400,21 +465,21 @@ class VirtualBatteryDbusService:
                 self._dbusservice["/System/MinCellTemperature"] = self.battery.get_min_temp()
             if hasattr(self.battery, 'get_max_temp'):
                 self._dbusservice["/System/MaxCellTemperature"] = self.battery.get_max_temp()
-            
+
             # Capacity
             if hasattr(self.battery, 'get_capacity_remain'):
                 self._dbusservice["/Capacity"] = self.battery.get_capacity_remain()
             if hasattr(self.battery, 'capacity'):
                 self._dbusservice["/InstalledCapacity"] = self.battery.capacity
-            
+
             # Consumed amphours
-            if (hasattr(self.battery, 'capacity') and self.battery.capacity is not None and 
-                hasattr(self.battery, 'get_capacity_remain') and 
+            if (hasattr(self.battery, 'capacity') and self.battery.capacity is not None and
+                hasattr(self.battery, 'get_capacity_remain') and
                 self.battery.get_capacity_remain() is not None):
                 self._dbusservice["/ConsumedAmphours"] = self.battery.capacity - self.battery.get_capacity_remain()
             else:
                 self._dbusservice["/ConsumedAmphours"] = None
-            
+
             # Midpoint voltage (if enabled)
             if hasattr(self.battery, 'get_midvoltage'):
                 try:
@@ -425,11 +490,11 @@ class VirtualBatteryDbusService:
                             self._dbusservice["/Dc/0/MidVoltageDeviation"] = deviation
                 except Exception as e:
                     logger.warning(f"Error calculating midpoint voltage: {e}")
-            
+
             # Cell data
             if hasattr(self.battery, 'cell_count'):
                 self._dbusservice["/System/NrOfCellsPerBattery"] = self.battery.cell_count
-            
+
             if hasattr(self.battery, 'get_min_cell_desc'):
                 self._dbusservice["/System/MinVoltageCellId"] = self.battery.get_min_cell_desc()
             if hasattr(self.battery, 'get_max_cell_desc'):
@@ -438,13 +503,13 @@ class VirtualBatteryDbusService:
                 self._dbusservice["/System/MinCellVoltage"] = self.battery.get_min_cell_voltage()
             if hasattr(self.battery, 'get_max_cell_voltage'):
                 self._dbusservice["/System/MaxCellVoltage"] = self.battery.get_max_cell_voltage()
-            
+
             # Cycles and history
             if hasattr(self.battery, 'cycles'):
                 self._dbusservice["/History/ChargeCycles"] = self.battery.cycles
             if hasattr(self.battery, 'total_ah_drawn'):
                 self._dbusservice["/History/TotalAhDrawn"] = self.battery.total_ah_drawn
-            
+
             # FET status
             if hasattr(self.battery, 'get_balancing'):
                 self._dbusservice["/Balancing"] = self.battery.get_balancing()
@@ -452,62 +517,62 @@ class VirtualBatteryDbusService:
                 self._dbusservice["/Io/AllowToCharge"] = 1 if self.battery.charge_fet else 0
             if hasattr(self.battery, 'discharge_fet'):
                 self._dbusservice["/Io/AllowToDischarge"] = 1 if self.battery.discharge_fet else 0
-            
+
             # Module status
             if hasattr(self.battery, 'charge_fet'):
                 self._dbusservice["/System/NrOfModulesBlockingCharge"] = 0 if self.battery.charge_fet else 1
             if hasattr(self.battery, 'discharge_fet'):
                 self._dbusservice["/System/NrOfModulesBlockingDischarge"] = 0 if self.battery.discharge_fet else 1
-            
+
             # Online status
             if hasattr(self.battery, 'batts'):
-                active_batteries = sum(1 for b in self.battery.batts 
+                active_batteries = sum(1 for b in self.battery.batts
                                       if hasattr(b, 'online') and b.online)
                 self._dbusservice["/System/NrOfModulesOnline"] = active_batteries
                 self._dbusservice["/System/NrOfModulesOffline"] = len(self.battery.batts) - active_batteries
-            
+
             # Charge control
             if hasattr(self.battery, 'control_charge_current') and self.battery.control_charge_current is not None:
                 self._dbusservice["/Info/MaxChargeCurrent"] = self.battery.control_charge_current
-            
+
             if hasattr(self.battery, 'control_discharge_current') and self.battery.control_discharge_current is not None:
                 self._dbusservice["/Info/MaxDischargeCurrent"] = self.battery.control_discharge_current
-            
+
             # Voltage control
             if hasattr(self.battery, 'control_voltage') and self.battery.control_voltage is not None:
                 self._dbusservice["/Info/MaxChargeVoltage"] = self.battery.control_voltage
-            
+
             # Update protection alarms
             self._update_alarms()
-            
+
             # Update individual cell data
-            if (BATTERY_CELL_DATA_FORMAT > 0 and 
-                hasattr(self.battery, 'cell_count') and self.battery.cell_count > 0 and 
+            if (BATTERY_CELL_DATA_FORMAT > 0 and
+                hasattr(self.battery, 'cell_count') and self.battery.cell_count > 0 and
                 hasattr(self.battery, 'cells') and self.battery.cells):
                 self._update_cell_data()
-            
+
             # Update TimeToSoc data
             self._update_time_to_soc()
-            
+
             # Update parallel-specific paths
             if hasattr(self.battery, 'series_config') and not self.battery.series_config:
                 self._update_parallel_specific_data()
-            
+
             return True
-            
+
         except Exception as e:
             logger.error(f"Error updating dbus service: {e}")
             return False
-    
+
     def _update_alarms(self) -> None:
         """Update all alarm states from the battery protection object."""
         if not hasattr(self.battery, 'protection'):
             return
-        
+
         # Update the alarm states - handle potentially None values
         try:
             protection = self.battery.protection
-            
+
             if hasattr(protection, 'voltage_low'):
                 self._dbusservice["/Alarms/LowVoltage"] = protection.voltage_low
             if hasattr(protection, 'voltage_cell_low'):
@@ -532,24 +597,24 @@ class VirtualBatteryDbusService:
                 self._dbusservice["/Alarms/HighTemperature"] = protection.temp_high_discharge
             if hasattr(protection, 'temp_low_discharge'):
                 self._dbusservice["/Alarms/LowTemperature"] = protection.temp_low_discharge
-                
+
         except Exception as e:
             logger.error(f"Error updating alarm status: {e}")
-    
+
     def _update_cell_data(self) -> None:
         """Update individual cell voltage and balancing data."""
-        if (not hasattr(self.battery, 'cells') or not self.battery.cells or 
+        if (not hasattr(self.battery, 'cells') or not self.battery.cells or
             BATTERY_CELL_DATA_FORMAT == 0):
             return
-        
+
         try:
             # Determine cell path format and base path once, outside the loop
             cell_path_format = "/Cell/%s/Volts" if (BATTERY_CELL_DATA_FORMAT & 2) else "/Voltages/Cell%s"
             path_base = "Cell" if (BATTERY_CELL_DATA_FORMAT & 2) else "Voltages"
-            
+
             voltage_sum = 0
             cell_count = min(len(self.battery.cells), self.battery.cell_count)
-            
+
             # First check if paths exist, if not create them
             for i in range(cell_count):
                 cell_path = cell_path_format % (str(i + 1))
@@ -562,35 +627,35 @@ class VirtualBatteryDbusService:
                         gettextcallback=lambda p, v: "{:0.3f}V".format(v) if v is not None else "---",
                     )
                     logger.info(f"Created missing cell voltage path: {cell_path}")
-                
+
                 if BATTERY_CELL_DATA_FORMAT & 1 and hasattr(self.battery, 'get_cell_balancing'):
                     balance_path = f"/Balances/Cell{i + 1}"
                     if balance_path not in self._dbusservice._dbusobjects:
                         # Add path that was missing
                         self._dbusservice.add_path(balance_path, None, writeable=True)
                         logger.info(f"Created missing cell balance path: {balance_path}")
-            
+
             # Now update the values
             for i in range(cell_count):
                 if not hasattr(self.battery, 'get_cell_voltage'):
                     continue
-                    
+
                 cell_voltage = self.battery.get_cell_voltage(i)
                 cell_path = cell_path_format % (str(i + 1))
                 try:
                     self._dbusservice[cell_path] = cell_voltage
                 except Exception as cell_error:
                     logger.error(f"Error updating cell data: '{cell_path}' - {cell_error}")
-                
+
                 if BATTERY_CELL_DATA_FORMAT & 1 and hasattr(self.battery, 'get_cell_balancing'):
                     try:
                         self._dbusservice[f"/Balances/Cell{i + 1}"] = self.battery.get_cell_balancing(i)
                     except Exception as bal_error:
                         logger.error(f"Error updating balance data: '/Balances/Cell{i + 1}' - {bal_error}")
-                
+
                 if cell_voltage:
                     voltage_sum += cell_voltage
-            
+
             # Make sure summary paths exist
             if f"/{path_base}/Sum" not in self._dbusservice._dbusobjects:
                 self._dbusservice.add_path(
@@ -600,7 +665,7 @@ class VirtualBatteryDbusService:
                     gettextcallback=lambda p, v: "{:2.2f}V".format(v) if v is not None else "---",
                 )
                 logger.info(f"Created missing voltage sum path: /{path_base}/Sum")
-                
+
             if f"/{path_base}/Diff" not in self._dbusservice._dbusobjects:
                 self._dbusservice.add_path(
                     f"/{path_base}/Diff",
@@ -609,27 +674,27 @@ class VirtualBatteryDbusService:
                     gettextcallback=lambda p, v: "{:0.3f}V".format(v) if v is not None else "---",
                 )
                 logger.info(f"Created missing voltage diff path: /{path_base}/Diff")
-            
+
             # Update summary data
             try:
                 self._dbusservice[f"/{path_base}/Sum"] = voltage_sum
             except Exception as sum_error:
                 logger.error(f"Error updating voltage sum: '/{path_base}/Sum' - {sum_error}")
-            
+
             # Calculate voltage difference
             if hasattr(self.battery, 'get_min_cell_voltage') and hasattr(self.battery, 'get_max_cell_voltage'):
                 min_cell_voltage = self.battery.get_min_cell_voltage()
                 max_cell_voltage = self.battery.get_max_cell_voltage()
-                
+
                 if min_cell_voltage is not None and max_cell_voltage is not None:
                     try:
                         self._dbusservice[f"/{path_base}/Diff"] = max_cell_voltage - min_cell_voltage
                     except Exception as diff_error:
                         logger.error(f"Error updating voltage diff: '/{path_base}/Diff' - {diff_error}")
-            
+
         except Exception as e:
             logger.error(f"Error updating cell data: {e}")
-    
+
     def _update_time_to_soc(self) -> None:
         """Update TimeToSoc values based on current state."""
         try:
@@ -644,51 +709,51 @@ class VirtualBatteryDbusService:
                 # Skip if zero capacity to avoid division by zero
                 if self.battery.capacity <= 0:
                     return
-                    
+
                 # Calculate percentage change per second
                 current_pct_per_sec = (
                     abs(self.battery.current / (self.battery.capacity / 100)) / 3600
                 )
-                
+
                 # Skip if zero current or very low rate of change
                 if current_pct_per_sec < 0.00001:
                     return
-                
+
                 # Calculate time to reach each SOC point
                 for num in TIME_TO_SOC_POINTS:
                     time_to_soc = self.battery.get_timetosoc(num, current_pct_per_sec)
                     self._dbusservice[f"/TimeToSoC/{num}"] = time_to_soc
-                
+
                 # Update TimeToGo (time to reach warning level)
                 self._dbusservice["/TimeToGo"] = self.battery.get_timetosoc(
                     SOC_LOW_WARNING, current_pct_per_sec
                 )
-                
+
         except Exception as e:
             logger.error(f"Error updating TimeToSoc data: {e}")
-    
+
     def _update_parallel_specific_data(self) -> None:
         """Update parallel battery specific status information."""
         if not hasattr(self.battery, 'series_config') or self.battery.series_config:
             return
-        
+
         try:
             # Update imbalance flags
             if hasattr(self.battery, 'voltage_imbalance'):
                 self._dbusservice["/Parallel/VoltageImbalance"] = 1 if self.battery.voltage_imbalance else 0
-            
+
             if hasattr(self.battery, 'current_imbalance'):
                 self._dbusservice["/Parallel/CurrentImbalance"] = 1 if self.battery.current_imbalance else 0
-            
+
             if hasattr(self.battery, 'soc_imbalance'):
                 self._dbusservice["/Parallel/SocImbalance"] = 1 if self.battery.soc_imbalance else 0
-            
+
             # Update battery status if batts attribute exists
             if hasattr(self.battery, 'batts'):
-                active_batteries = sum(1 for b in self.battery.batts 
+                active_batteries = sum(1 for b in self.battery.batts
                                       if hasattr(b, 'online') and b.online)
                 self._dbusservice["/Parallel/ActiveBatteries"] = active_batteries
-            
+
         except Exception as e:
             logger.error(f"Error updating parallel battery data: {e}")
 
@@ -698,45 +763,45 @@ class VirtualBatteryDbusManager:
     Manager class for handling multiple virtual battery D-Bus services.
     This is useful when running in both series and parallel mode simultaneously.
     """
-    
+
     def __init__(self):
         """Initialize the manager."""
         self.services = {}
-    
+
     def add_battery(self, battery, service_name=None, device_instance=None):
         """
         Add a battery service.
-        
+
         Args:
             battery: The battery object
             service_name: Optional custom service name
             device_instance: Optional device instance number
-        
+
         Returns:
             The created service object
         """
         # Create a unique identifier for this battery
         battery_id = id(battery)
-        
+
         # Create the service
         service = VirtualBatteryDbusService(
-            battery, 
+            battery,
             service_name=service_name,
             device_instance=device_instance
         )
-        
+
         # Store the service
         self.services[battery_id] = service
-        
+
         return service
-    
+
     def remove_battery(self, battery):
         """
         Remove a battery service.
-        
+
         Args:
             battery: The battery object to remove
-        
+
         Returns:
             True if removed, False if not found
         """
@@ -745,13 +810,13 @@ class VirtualBatteryDbusManager:
             # Clean up the service if needed
             del self.services[battery_id]
             return True
-        
+
         return False
-    
+
     def update_all(self):
         """
         Update all battery services.
-        
+
         Returns:
             Number of successfully updated services
         """
@@ -759,5 +824,5 @@ class VirtualBatteryDbusManager:
         for service in self.services.values():
             if service.update():
                 success_count += 1
-        
+
         return success_count
