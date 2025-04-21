@@ -77,6 +77,22 @@ The parallel mode adds several new D-Bus paths to monitor parallel battery statu
 | `/Parallel/TotalBatteries` | Total number of batteries in the configuration |
 | `/Parallel/ActiveBatteries` | Number of currently active batteries |
 
+### Cell Voltage Monitoring
+
+For parallel battery configurations, cell voltages from all physical batteries are now published with unique identifiers:
+
+| Path Format | Description |
+|-------------|-------------|
+| `/Voltages/Cell<BATTERY>-<CELL>` | Cell voltage for each physical battery |
+| `/Balances/Cell<BATTERY>-<CELL>` | Cell balancing status for each physical battery |
+
+Examples:
+- `/Voltages/Cell1-3` = Voltage of cell #3 in battery #1
+- `/Voltages/Cell2-4` = Voltage of cell #4 in battery #2
+- `/Balances/Cell1-3` = Balance status of cell #3 in battery #1
+
+This allows monitoring individual cell voltages across all physical batteries in the system.
+
 ## Handling Imbalances
 
 The system automatically manages imbalances between batteries by:

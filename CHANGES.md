@@ -6,6 +6,16 @@ This update introduces comprehensive enhancements to the dbus-btbattery project'
 
 ## Recent Changes
 
+### Enhanced Cell Voltage Monitoring
+
+- Cell voltages from all physical batteries are now published in DBus interface
+- Uses new naming scheme for better identification:
+  - Voltages/Cell1-1, Voltages/Cell1-2, etc. for first battery
+  - Voltages/Cell2-1, Voltages/Cell2-2, etc. for second battery
+- Enables monitoring of individual cell voltages for all batteries in parallel configuration
+- Maintains backward compatibility with existing monitoring tools
+- Also applies the same naming scheme to cell balancing status
+
 ### Configurable SOC Imbalance Detection
 
 - Added configurable SOC imbalance detection for virtual batteries in parallel mode
