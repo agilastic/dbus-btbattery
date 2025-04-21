@@ -36,6 +36,7 @@ else:
 from jbdbt import JbdBt
 from virtual import Virtual
 from dbus_interface import VirtualBatteryDbusService
+import utils
 from utils import (
     logger, DRIVER_VERSION, DRIVER_SUBVERSION
 )
