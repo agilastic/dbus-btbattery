@@ -534,16 +534,25 @@ class VirtualBatteryDbusService:
                     
                 cell_voltage = self.battery.get_cell_voltage(i)
                 cell_path = cell_path_format % (str(i + 1))
-                self._dbusservice[cell_path] = cell_voltage
+                try:
+                    self._dbusservice[cell_path] = cell_voltage
+                except Exception as cell_error:
+                    logger.error(f"Error updating cell data: '{cell_path}' - {cell_error}")
                 
                 if BATTERY_CELL_DATA_FORMAT & 1 and hasattr(self.battery, 'get_cell_balancing'):
-                    self._dbusservice[f"/Balances/Cell{i + 1}"] = self.battery.get_cell_balancing(i)
+                    try:
+                        self._dbusservice[f"/Balances/Cell{i + 1}"] = self.battery.get_cell_balancing(i)
+                    except Exception as bal_error:
+                        logger.error(f"Error updating balance data: '/Balances/Cell{i + 1}' - {bal_error}")
                 
                 if cell_voltage:
                     voltage_sum += cell_voltage
             
             # Update summary data
-            self._dbusservice[f"/{path_base}/Sum"] = voltage_sum
+            try:
+                self._dbusservice[f"/{path_base}/Sum"] = voltage_sum
+            except Exception as sum_error:
+                logger.error(f"Error updating voltage sum: '/{path_base}/Sum' - {sum_error}")
             
             # Calculate voltage difference
             if hasattr(self.battery, 'get_min_cell_voltage') and hasattr(self.battery, 'get_max_cell_voltage'):
@@ -551,7 +560,10 @@ class VirtualBatteryDbusService:
                 max_cell_voltage = self.battery.get_max_cell_voltage()
                 
                 if min_cell_voltage is not None and max_cell_voltage is not None:
-                    self._dbusservice[f"/{path_base}/Diff"] = max_cell_voltage - min_cell_voltage
+                    try:
+                        self._dbusservice[f"/{path_base}/Diff"] = max_cell_voltage - min_cell_voltage
+                    except Exception as diff_error:
+                        logger.error(f"Error updating voltage diff: '/{path_base}/Diff' - {diff_error}")
             
         except Exception as e:
             logger.error(f"Error updating cell data: {e}")
