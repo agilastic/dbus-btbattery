@@ -17,18 +17,18 @@ class Protection(object):
     """
 
     def __init__(self):
-        self.voltage_high: int = None
-        self.voltage_low: int = None
-        self.voltage_cell_low: int = None
-        self.soc_low: int = None
-        self.current_over: int = None
-        self.current_under: int = None
-        self.cell_imbalance: int = None
-        self.internal_failure: int = None
-        self.temp_high_charge: int = None
-        self.temp_low_charge: int = None
-        self.temp_high_discharge: int = None
-        self.temp_low_discharge: int = None
+        self.voltage_high: int = 0
+        self.voltage_low: int = 0
+        self.voltage_cell_low: int = 0
+        self.soc_low: int = 0
+        self.current_over: int = 0
+        self.current_under: int = 0
+        self.cell_imbalance: int = 0
+        self.internal_failure: int = 0
+        self.temp_high_charge: int = 0
+        self.temp_low_charge: int = 0
+        self.temp_high_discharge: int = 0
+        self.temp_low_discharge: int = 0
 
 
 class Cell:
@@ -36,12 +36,10 @@ class Cell:
     This class holds information about a single Cell
     """
 
-    voltage = None
-    balance = None
-    temp = None
-
-    def __init__(self, balance):
-        self.balance = balance
+    def __init__(self, balance=False):
+        self.voltage: Union[float, None] = None
+        self.balance: bool = balance
+        self.temp: Union[float, None] = None
 
 
 class Battery(ABC):
@@ -274,7 +272,8 @@ class Battery(ABC):
                 utils.MAX_CHARGE_CURRENT_CV,
                 False,
             )
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error calculating max charge current by cell voltage: {e}")
             return self.max_battery_charge_current
 
     def calcMaxDischargeCurrentReferringToCellVoltage(self) -> float:
@@ -291,8 +290,9 @@ class Battery(ABC):
                 utils.MAX_DISCHARGE_CURRENT_CV,
                 True,
             )
-        except Exception:
-            return self.max_battery_charge_current
+        except Exception as e:
+            logger.error(f"Error calculating max discharge current by cell voltage: {e}")
+            return self.max_battery_discharge_current
 
     def calcMaxChargeCurrentReferringToTemperature(self) -> float:
         if self.get_max_temp() is None:
@@ -342,7 +342,7 @@ class Battery(ABC):
 
     def calcMaxChargeCurrentReferringToSoc(self) -> float:
         try:
-            # Create value list. Will more this to the settings object
+            # Create value list. Will move this to the settings object
             SOC_WHILE_CHARGING = [
                 100,
                 utils.CC_SOC_LIMIT1,
@@ -362,12 +362,13 @@ class Battery(ABC):
             return utils.calcStepRelationship(
                 self.soc, SOC_WHILE_CHARGING, MAX_CHARGE_CURRENT_SOC, True
             )
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error calculating max charge current by SOC: {e}")
             return self.max_battery_charge_current
 
     def calcMaxDischargeCurrentReferringToSoc(self) -> float:
         try:
-            # Create value list. Will more this to the settings object
+            # Create value list. Will move this to the settings object
             SOC_WHILE_DISCHARGING = [
                 utils.DC_SOC_LIMIT3,
                 utils.DC_SOC_LIMIT2,
@@ -386,8 +387,9 @@ class Battery(ABC):
             return utils.calcStepRelationship(
                 self.soc, SOC_WHILE_DISCHARGING, MAX_DISCHARGE_CURRENT_SOC, True
             )
-        except Exception:
-            return self.max_battery_charge_current
+        except Exception as e:
+            logger.error(f"Error calculating max discharge current by SOC: {e}")
+            return self.max_battery_discharge_current
 
     def get_min_cell(self) -> int:
         min_voltage = 9999
@@ -419,13 +421,13 @@ class Battery(ABC):
                 max_cell = c
         return max_cell
 
-    def get_min_cell_desc(self) -> Union[str, None]:
+    def get_min_cell_desc(self) -> str:
         cell_no = self.get_min_cell()
-        return cell_no if cell_no is None else "C" + str(cell_no + 1)
+        return "None" if cell_no is None else "C" + str(cell_no + 1)
 
-    def get_max_cell_desc(self) -> Union[str, None]:
+    def get_max_cell_desc(self) -> str:
         cell_no = self.get_max_cell()
-        return cell_no if cell_no is None else "C" + str(cell_no + 1)
+        return "None" if cell_no is None else "C" + str(cell_no + 1)
 
     def get_cell_voltage(self, idx) -> Union[float, None]:
         if idx >= min(len(self.cells), self.cell_count):
@@ -528,18 +530,32 @@ class Battery(ABC):
                 for cell in self.cells[halfcount + uneven_cells_offset :]
                 if cell.voltage is not None
             )
-        except ValueError:
-            pass
+        except (ValueError, TypeError):
+            logger.error("Error calculating half voltages in get_midvoltage")
+            return None, None
 
         try:
-            extra = 0 if self.cell_count % 2 == 0 else self.cells[halfcount].voltage / 2
+            # Check if middle cell exists and has voltage when needed
+            middle_cell_voltage = 0
+            if self.cell_count % 2 != 0:
+                if halfcount < len(self.cells) and self.cells[halfcount].voltage is not None:
+                    middle_cell_voltage = self.cells[halfcount].voltage / 2
+                else:
+                    return None, None
+                    
             # get the midpoint of the battery
-            midpoint = half1voltage + extra
+            midpoint = half1voltage + middle_cell_voltage
+            
+            # Avoid division by zero
+            if half1voltage + half2voltage == 0:
+                return midpoint, 0
+                
             return (
                 midpoint,
                 (half2voltage - half1voltage) / (half2voltage + half1voltage) * 100,
             )
-        except ValueError:
+        except (ValueError, TypeError, ZeroDivisionError) as e:
+            logger.error(f"Error in get_midvoltage calculation: {e}")
             return None, None
 
     def get_balancing(self) -> int:
@@ -555,54 +571,77 @@ class Battery(ABC):
             return self.temp1
         if self.temp1 is None and self.temp2 is not None:
             return self.temp2
-        else:
-            return None
+        return None
 
     def get_temp(self) -> Union[float, None]:
-        return self.extract_from_temp_values(
-            extractor=lambda temp1, temp2: round((float(temp1) + float(temp2)) / 2, 2)
-        )
+        try:
+            return self.extract_from_temp_values(
+                extractor=lambda temp1, temp2: round((float(temp1) + float(temp2)) / 2, 2)
+            )
+        except (ValueError, TypeError) as e:
+            logger.error(f"Error calculating average temperature: {e}")
+            return None
 
     def get_min_temp(self) -> Union[float, None]:
-        return self.extract_from_temp_values(
-            extractor=lambda temp1, temp2: min(temp1, temp2)
-        )
+        try:
+            return self.extract_from_temp_values(
+                extractor=lambda temp1, temp2: min(temp1, temp2)
+            )
+        except (ValueError, TypeError) as e:
+            logger.error(f"Error calculating minimum temperature: {e}")
+            return None
 
     def get_max_temp(self) -> Union[float, None]:
-        return self.extract_from_temp_values(
-            extractor=lambda temp1, temp2: max(temp1, temp2)
-        )
+        try:
+            return self.extract_from_temp_values(
+                extractor=lambda temp1, temp2: max(temp1, temp2)
+            )
+        except (ValueError, TypeError) as e:
+            logger.error(f"Error calculating maximum temperature: {e}")
+            return None
 
     def log_cell_data(self) -> bool:
         if logger.getEffectiveLevel() > logging.INFO and len(self.cells) == 0:
             return False
 
-        cell_res = ""
-        cell_counter = 1
-        for c in self.cells:
-            cell_res += "[{0}]{1}V ".format(cell_counter, c.voltage)
-            cell_counter = cell_counter + 1
-        logger.debug("Cells:" + cell_res)
-        return True
+        try:
+            cell_res = ""
+            cell_counter = 1
+            for c in self.cells:
+                voltage_str = str(c.voltage) if c.voltage is not None else "None"
+                cell_res += f"[{cell_counter}]{voltage_str}V "
+                cell_counter = cell_counter + 1
+            logger.debug("Cells:" + cell_res)
+            return True
+        except Exception as e:
+            logger.error(f"Error logging cell data: {e}")
+            return False
 
     def log_settings(self) -> None:
-
-        logger.info(f"Battery {self.type} connected to dbus from {self.port}")
-        logger.info("=== Settings ===")
-        cell_counter = len(self.cells)
-        logger.info(
-            f"> Connection voltage {self.voltage}V | current {self.current}A | SOC {self.soc}%"
-        )
-        logger.info(f"> Cell count {self.cell_count} | cells populated {cell_counter}")
-        logger.info(
-            f"> CCCM SOC {utils.CCCM_SOC_ENABLE} | DCCM SOC {utils.DCCM_SOC_ENABLE}"
-        )
-        logger.info(
-            f"> CCCM CV {utils.CCCM_CV_ENABLE} | DCCM CV {utils.DCCM_CV_ENABLE}"
-        )
-        logger.info(f"> CCCM T {utils.CCCM_T_ENABLE} | DCCM T {utils.DCCM_T_ENABLE}")
-        logger.info(
-            f"> MIN_CELL_VOLTAGE {utils.MIN_CELL_VOLTAGE}V | MAX_CELL_VOLTAGE {utils.MAX_CELL_VOLTAGE}V"
-        )
-
+        try:
+            logger.info(f"Battery {self.type} connected to dbus from {self.port}")
+            logger.info("=== Settings ===")
+            cell_counter = len(self.cells)
+            
+            voltage_str = f"{self.voltage}V" if self.voltage is not None else "Unknown"
+            current_str = f"{self.current}A" if self.current is not None else "Unknown"
+            soc_str = f"{self.soc}%" if self.soc is not None else "Unknown"
+            
+            logger.info(
+                f"> Connection voltage {voltage_str} | current {current_str} | SOC {soc_str}"
+            )
+            logger.info(f"> Cell count {self.cell_count} | cells populated {cell_counter}")
+            logger.info(
+                f"> CCCM SOC {utils.CCCM_SOC_ENABLE} | DCCM SOC {utils.DCCM_SOC_ENABLE}"
+            )
+            logger.info(
+                f"> CCCM CV {utils.CCCM_CV_ENABLE} | DCCM CV {utils.DCCM_CV_ENABLE}"
+            )
+            logger.info(f"> CCCM T {utils.CCCM_T_ENABLE} | DCCM T {utils.DCCM_T_ENABLE}")
+            logger.info(
+                f"> MIN_CELL_VOLTAGE {utils.MIN_CELL_VOLTAGE}V | MAX_CELL_VOLTAGE {utils.MAX_CELL_VOLTAGE}V"
+            )
+        except Exception as e:
+            logger.error(f"Error logging settings: {e}")
+        
         return
