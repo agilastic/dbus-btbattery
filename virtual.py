@@ -2,9 +2,11 @@
 # -*- coding: utf-8 -*-
 
 from battery import Protection, Battery, Cell
+import utils
 from utils import (
     logger, MAX_CELL_VOLTAGE, MIN_CELL_VOLTAGE, 
-    MAX_BATTERY_CHARGE_CURRENT, MAX_BATTERY_DISCHARGE_CURRENT
+    MAX_BATTERY_CHARGE_CURRENT, MAX_BATTERY_DISCHARGE_CURRENT,
+    SOC_IMBALANCE_DETECTION_ENABLE, SOC_IMBALANCE_THRESHOLD  
 )
 import time
 import copy
