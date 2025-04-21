@@ -4,6 +4,16 @@
 
 This update introduces comprehensive enhancements to the dbus-btbattery project's virtual battery functionality, particularly focused on improving parallel battery configurations.
 
+## Recent Changes
+
+### Configurable SOC Imbalance Detection
+
+- Added configurable SOC imbalance detection for virtual batteries in parallel mode
+- New configuration options:
+  - `SOC_IMBALANCE_DETECTION_ENABLE`: Enable or disable SOC imbalance detection (default: True)
+  - `SOC_IMBALANCE_THRESHOLD`: SOC difference threshold in percent (default: 10)
+- Log output now includes imbalance detection configuration
+
 ### Key Improvements
 
 #### Better Parallel Mode Logic

@@ -638,6 +638,7 @@ class Battery(ABC):
                 f"> CCCM CV {utils.CCCM_CV_ENABLE} | DCCM CV {utils.DCCM_CV_ENABLE}"
             )
             logger.info(f"> CCCM T {utils.CCCM_T_ENABLE} | DCCM T {utils.DCCM_T_ENABLE}")
+            logger.info(f"> SOC Imbalance Detection {utils.SOC_IMBALANCE_DETECTION_ENABLE} | Threshold {utils.SOC_IMBALANCE_THRESHOLD}%")
             logger.info(
                 f"> MIN_CELL_VOLTAGE {utils.MIN_CELL_VOLTAGE}V | MAX_CELL_VOLTAGE {utils.MAX_CELL_VOLTAGE}V"
             )

@@ -128,4 +128,14 @@ The parallel_lfp_config.ini file contains optimized settings for LiFePO4 batteri
 - `CELL_VOLTAGES_WHILE_CHARGING` - Voltage points for charge current tapering
 - `MAX_CHARGE_CURRENT_CV_FRACTION` - Current tapering fractions
 
+### Imbalance Detection Configuration
+
+You can configure the SOC imbalance detection feature in the config file:
+
+- `SOC_IMBALANCE_DETECTION_ENABLE` - Enable or disable SOC imbalance detection (default: True)
+- `SOC_IMBALANCE_THRESHOLD` - SOC difference threshold in percent (default: 10)
+
+To disable SOC imbalance detection, set `SOC_IMBALANCE_DETECTION_ENABLE = False` in your config file.
+To adjust the sensitivity, modify the `SOC_IMBALANCE_THRESHOLD` value - higher values make detection less sensitive.
+
 For more advanced settings, refer to the comments in the configuration file.

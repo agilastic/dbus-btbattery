@@ -61,6 +61,10 @@ MAX_BATTERY_DISCHARGE_CURRENT = float(
     config["DEFAULT"]["MAX_BATTERY_DISCHARGE_CURRENT"]
 )
 
+# Parallel battery imbalance detection settings
+SOC_IMBALANCE_DETECTION_ENABLE = "True" == config["DEFAULT"].get("SOC_IMBALANCE_DETECTION_ENABLE", "True")
+SOC_IMBALANCE_THRESHOLD = float(config["DEFAULT"].get("SOC_IMBALANCE_THRESHOLD", "10"))
+
 # -------- Cell Voltage limitation ---------
 # Description:
 # Maximal charge / discharge current will be in-/decreased depending on min- and max-cell-voltages

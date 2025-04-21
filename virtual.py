@@ -579,8 +579,8 @@ class Virtual(Battery):
         if len(socs) > 1:
             max_soc = max(socs)
             min_soc = min(socs)
-            # Consider imbalance if > 10% SOC difference
-            if max_soc - min_soc > 10:
+            # Check if SOC imbalance detection is enabled and threshold is exceeded
+            if utils.SOC_IMBALANCE_DETECTION_ENABLE and max_soc - min_soc > utils.SOC_IMBALANCE_THRESHOLD:
                 self.soc_imbalance = True
                 logger.warning(f"Parallel battery SOC imbalance detected: min={min_soc:.1f}%, max={max_soc:.1f}%")
         
