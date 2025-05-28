@@ -66,15 +66,13 @@ class VirtualBatteryDbusService:
         self.service_name = service_name
         logger.info(f"Creating virtual battery D-Bus service: {self.service_name}")
 
-        # FIXED: Initialize D-Bus service with register=False
-        self._dbusservice = VeDbusService(self.service_name, get_bus(), register=False)
+        # Initialize D-Bus service without register parameter
+        self._dbusservice = VeDbusService(self.service_name, get_bus())
 
-        # CRITICAL: Set up D-Bus paths BEFORE registering
+        # Set up D-Bus paths
         self._setup_dbus_paths()
-
-        # NOW register the service after all paths are added
-        self._dbusservice.register()
-        logger.info(f"D-Bus service registered: {self.service_name}")
+        
+        logger.info(f"D-Bus service initialized: {self.service_name}")
     
     def _setup_dbus_paths(self) -> None:
         """Set up all the D-Bus paths for the virtual battery."""
