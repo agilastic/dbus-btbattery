@@ -90,6 +90,9 @@ class Battery(ABC):
         # max battery charge/discharge current
         self.max_battery_charge_current = None
         self.max_battery_discharge_current = None
+        # min/max battery voltages
+        self.min_battery_voltage = None
+        self.max_battery_voltage = None
 
         self.time_to_soc_update = utils.TIME_TO_SOC_LOOP_CYCLES
 

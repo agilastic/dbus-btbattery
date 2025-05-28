@@ -49,7 +49,7 @@ class VirtualBatteryDbusService:
     def __init__(self, battery, service_name=None, device_instance=1):
         """
         Initialize the D-Bus service for the virtual battery.
-        
+
         Args:
             battery: The virtual battery object
             service_name: Optional service name override
@@ -57,20 +57,24 @@ class VirtualBatteryDbusService:
         """
         self.battery = battery
         self.device_instance = device_instance
-        
+
         # Derive service name from configuration if not provided
         if service_name is None:
             config_type = "series" if hasattr(battery, 'series_config') and battery.series_config else "parallel"
             service_name = f"com.victronenergy.battery.virtual_{config_type}_{device_instance}"
-        
+
         self.service_name = service_name
         logger.info(f"Creating virtual battery D-Bus service: {self.service_name}")
-        
-        # Initialize D-Bus service
-        self._dbusservice = VeDbusService(self.service_name, get_bus())
-        
-        # Set up D-Bus paths
+
+        # FIXED: Initialize D-Bus service with register=False
+        self._dbusservice = VeDbusService(self.service_name, get_bus(), register=False)
+
+        # CRITICAL: Set up D-Bus paths BEFORE registering
         self._setup_dbus_paths()
+
+        # NOW register the service after all paths are added
+        self._dbusservice.register()
+        logger.info(f"D-Bus service registered: {self.service_name}")
     
     def _setup_dbus_paths(self) -> None:
         """Set up all the D-Bus paths for the virtual battery."""
