@@ -17,15 +17,18 @@ def ensure_path(path: str) -> None:
 # Try to import Victron packages (handle both direct and Venus OS environments)
 try:
     from vedbus import VeDbusService
+    from settingsdevice import SettingsDevice
 except ImportError:
-    velib_path = os.path.join(os.path.dirname(__file__), 
+    velib_path = os.path.join(os.path.dirname(__file__),
                              "/opt/victronenergy/dbus-systemcalc-py/ext/velib_python")
     ensure_path(velib_path)
     try:
         from vedbus import VeDbusService
+        from settingsdevice import SettingsDevice
     except ImportError:
         # Fallback for development environments
         from vedbus_mock import VeDbusService
+        SettingsDevice = None
 
 # Import utils module to access configuration and logging
 import utils
@@ -46,33 +49,89 @@ class VirtualBatteryDbusService:
     This class publishes battery data to the Venus OS D-Bus system.
     """
     
-    def __init__(self, battery, service_name=None, device_instance=1):
+    def __init__(self, battery, service_name=None, device_instance=None):
         """
         Initialize the D-Bus service for the virtual battery.
 
         Args:
             battery: The virtual battery object
             service_name: Optional service name override
-            device_instance: D-Bus device instance number
+            device_instance: D-Bus device instance number (None = auto-assign via SettingsDevice)
         """
         self.battery = battery
-        self.device_instance = device_instance
+
+        # Build a stable unique identifier for this battery based on address or name
+        if hasattr(battery, 'address') and battery.address:
+            self.bms_id = "btbattery_" + battery.address.replace(":", "")
+        elif hasattr(battery, 'batts') and battery.batts:
+            addrs = "_".join(b.address.replace(":", "") for b in battery.batts if hasattr(b, 'address'))
+            self.bms_id = "btbattery_" + addrs
+        else:
+            self.bms_id = "btbattery_virtual"
 
         # Derive service name from configuration if not provided
         if service_name is None:
             config_type = "series" if hasattr(battery, 'series_config') and battery.series_config else "parallel"
-            service_name = f"com.victronenergy.battery.virtual_{config_type}_{device_instance}"
+            service_name = f"com.victronenergy.battery.{self.bms_id}"
 
         self.service_name = service_name
         logger.info(f"Creating virtual battery D-Bus service: {self.service_name}")
 
-        # Initialize D-Bus service without register parameter
+        # Resolve device instance — prefer Venus OS SettingsDevice for persistence
+        if device_instance is not None:
+            self.device_instance = device_instance
+        else:
+            self.device_instance = self._setup_instance()
+
+        # Initialize D-Bus service
         self._dbusservice = VeDbusService(self.service_name, get_bus())
 
         # Set up D-Bus paths
         self._setup_dbus_paths()
-        
-        logger.info(f"D-Bus service initialized: {self.service_name}")
+
+        logger.info(f"D-Bus service initialized: {self.service_name} (instance {self.device_instance})")
+
+    def _setup_instance(self) -> int:
+        """
+        Register this device with Venus OS settings and obtain a stable instance number.
+        Uses com.victronenergy.settings /Settings/Devices/<bms_id>/ClassAndVrmInstance
+        so that the instance number persists across reboots and does not collide with
+        other batteries on the bus.
+
+        Returns:
+            Assigned device instance number (integer)
+        """
+        if SettingsDevice is None:
+            logger.warning("SettingsDevice not available, using default instance 1")
+            return 1
+
+        settings_path = f"/Settings/Devices/{self.bms_id}/ClassAndVrmInstance"
+        try:
+            settings = SettingsDevice(
+                bus=get_bus(),
+                supportedSettings={
+                    "ClassAndVrmInstance": [settings_path, "battery:1", 0, 0],
+                },
+                eventcallback=self._handle_changed_setting,
+            )
+            value = settings["ClassAndVrmInstance"]
+            # Format is "battery:<N>"
+            instance = int(value.split(":")[1])
+            logger.info(f"Venus OS assigned device instance {instance} for {self.bms_id}")
+            return instance
+        except Exception as e:
+            logger.warning(f"Could not read instance from Venus OS settings ({e}), using default 1")
+            return 1
+
+    def _handle_changed_setting(self, setting, old_value, new_value):
+        """Handle a settings change from Venus OS (e.g. manual instance reassignment)."""
+        if setting == "ClassAndVrmInstance":
+            try:
+                new_instance = int(new_value.split(":")[1])
+                if new_instance != self.device_instance:
+                    logger.info(f"Device instance changed from {self.device_instance} to {new_instance} — restart required")
+            except Exception:
+                pass
     
     def _setup_dbus_paths(self) -> None:
         """Set up all the D-Bus paths for the virtual battery."""

@@ -177,17 +177,10 @@ def create_dbus_service(battery):
     logger.info("Creating DBUS service...")
     
     try:
-        # Determine service name based on battery type
-        if isinstance(battery, Virtual):
-            config_type = "series" if battery.series_config else "parallel"
-            service_name = f"com.victronenergy.battery.virtual_{config_type}"
-        else:
-            # For single physical battery
-            addr_short = battery.address.replace(":", "")
-            service_name = f"com.victronenergy.battery.{addr_short}"
-        
-        # Create the service
-        service = VirtualBatteryDbusService(battery, service_name=service_name)
+        # Let VirtualBatteryDbusService derive the service name and device instance
+        # from the battery address — this ensures the SettingsDevice path and service
+        # name are consistent and the instance number persists across reboots.
+        service = VirtualBatteryDbusService(battery)
         
         # Initial data update
         if not battery.get_settings():
@@ -197,7 +190,7 @@ def create_dbus_service(battery):
         # Update DBUS with initial values
         service.update()
         
-        logger.info(f"DBUS service created: {service_name}")
+        logger.info(f"DBUS service created: {service.service_name}")
         return service
     
     except Exception as e:
